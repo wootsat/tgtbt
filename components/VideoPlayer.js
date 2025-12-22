@@ -1,91 +1,121 @@
-import React, { useState, useRef } from 'react';
-import { X, Star } from 'lucide-react';
+'use client'
+import { useRef, useEffect, useState } from 'react'
+import { X, Star, MessageCircle, Play, Pause, Volume2, VolumeX } from 'lucide-react'
+import CommentsOverlay from '@/components/CommentsOverlay' 
 
-const VideoPlayer = ({ videoSrc, videoId, initialRating = 0, onRate, onClose }) => {
-  const [showOverlay, setShowOverlay] = useState(false);
-  const [rating, setRating] = useState(initialRating);
-  const [hoverRating, setHoverRating] = useState(0);
-  const videoRef = useRef(null);
+// Added initialCommentCount prop
+export default function VideoPlayer({ videoSrc, videoId, initialRating, initialCommentCount = 0, onRate, onClose }) {
+  const videoRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(true)
+  const [rating, setRating] = useState(initialRating || 0)
+  const [userRating, setUserRating] = useState(0)
+  const [hoverRating, setHoverRating] = useState(0)
+  const [showComments, setShowComments] = useState(false) 
+  const [isMuted, setIsMuted] = useState(false)
+  
+  // Track comment count locally so it updates if user comments
+  const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  const handleRating = (score) => {
-    setRating(score);
-    if (onRate) onRate(videoId, score);
-    // Optional: Close overlay after rating
-    setTimeout(() => setShowOverlay(false), 500); 
-  };
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.play().catch(e => console.log("Autoplay prevented", e))
+    }
+  }, [])
+
+  const togglePlay = (e) => {
+    e.stopPropagation()
+    if (videoRef.current.paused) {
+      videoRef.current.play()
+      setIsPlaying(true)
+    } else {
+      videoRef.current.pause()
+      setIsPlaying(false)
+    }
+  }
+
+  const handleRate = (score) => {
+    setUserRating(score)
+    onRate(videoId, score)
+  }
+
+  const toggleMute = (e) => {
+    e.stopPropagation()
+    videoRef.current.muted = !videoRef.current.muted
+    setIsMuted(!isMuted)
+  }
 
   return (
-    <div className="relative w-full h-full bg-black overflow-hidden shadow-2xl">
+    <div className="relative w-full h-full flex items-center justify-center bg-black">
       
-      {/* 1. The Video Player */}
-      <video
+      <button onClick={onClose} className="absolute top-4 right-4 z-50 text-white/80 hover:text-white bg-black/40 rounded-full p-2 backdrop-blur-sm">
+        <X size={28} />
+      </button>
+
+      <video 
         ref={videoRef}
         src={videoSrc}
-        className="w-full h-full object-cover cursor-pointer"
+        className="max-h-full max-w-full w-auto h-auto object-contain cursor-pointer"
         loop
-        autoPlay
         playsInline
-        muted={false} 
-        onClick={() => setShowOverlay(true)} // Tap video -> Show Overlay
+        onClick={togglePlay}
       />
 
-      {/* 2. The Title Overlay (Visible when interactive overlay is CLOSED) */}
-      {!showOverlay && (
-        <div className="absolute bottom-12 left-0 w-full text-center pointer-events-none animate-pulse">
-           <p className="text-white/50 text-xs uppercase tracking-widest">Tap to Rate / Close</p>
+      {!isPlaying && !showComments && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Play size={64} className="text-white/50" fill="currentColor" />
         </div>
       )}
 
-      {/* 3. The Interactive Overlay (Visible when Tapped) */}
-      {showOverlay && (
-        <div className="absolute inset-0 z-20 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-200">
-          
-          {/* Close Button (Red X) */}
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              // If onClose is provided (Feed view), close the video. 
-              // If not, just close the overlay.
-              if (onClose) onClose(); 
-              else setShowOverlay(false);
-            }}
-            className="absolute top-8 right-8 p-3 bg-white/10 rounded-full hover:bg-white/20 transition transform hover:scale-110"
-          >
-            <X className="w-10 h-10 text-red-500" strokeWidth={4} />
-          </button>
-
-          {/* Star Rating System */}
-          <div className="flex gap-2 mb-4">
-            {[1, 2, 3, 4, 5].map((starIndex) => {
-              const isFilled = starIndex <= (hoverRating || rating);
-              return (
+      {!showComments && (
+        <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent">
+          <div className="flex flex-col gap-4 items-center animate-in slide-in-from-bottom-4">
+            
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
                 <button
-                  key={starIndex}
-                  className="transition-transform transform hover:scale-125 focus:outline-none"
-                  onMouseEnter={() => setHoverRating(starIndex)}
+                  key={star}
+                  onMouseEnter={() => setHoverRating(star)}
                   onMouseLeave={() => setHoverRating(0)}
-                  onClick={() => handleRating(starIndex)}
+                  onClick={() => handleRate(star)}
+                  className="transition transform hover:scale-125 focus:outline-none"
                 >
-                  <Star
-                    size={42}
-                    className={`transition-colors duration-200 ${
-                      isFilled 
-                        ? "fill-yellow-400 text-yellow-400" 
-                        : "text-gray-500 fill-transparent"
-                    }`}
+                  <Star 
+                    size={32} 
+                    className={star <= (hoverRating || userRating || rating) ? "text-yellow-400 fill-yellow-400 drop-shadow-lg" : "text-gray-500"} 
                   />
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
 
-          <p className="text-white font-black tracking-widest text-lg uppercase">
-            Rate this TGTBT
-          </p>
+            <div className="flex items-center gap-6 mt-2">
+              <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
+                {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
+              </button>
+
+              {/* UPDATED BUTTON WITH COUNT */}
+              <button 
+                onClick={() => setShowComments(true)}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full backdrop-blur-md border border-white/10 transition"
+              >
+                <MessageCircle size={20} />
+                <span className="text-sm font-bold">Comments ({commentCount})</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showComments && (
+        <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center">
+          <CommentsOverlay 
+            videoId={videoId} 
+            onClose={() => setShowComments(false)} 
+            isInsidePlayer={true}
+            // Increase count when user comments successfully
+            onCommentAdded={() => setCommentCount(prev => prev + 1)}
+          />
         </div>
       )}
     </div>
-  );
-};
-
-export default VideoPlayer;
+  )
+}

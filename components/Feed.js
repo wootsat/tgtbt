@@ -1,134 +1,210 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Trophy, PlayCircle } from 'lucide-react'
+import { Loader2, PlayCircle, User, Flame, CalendarDays, Sparkles, MessageCircle } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
+import CommentsOverlay from '@/components/CommentsOverlay'
+import { useSwipeable } from 'react-swipeable'
 
-export default function Feed() {
+const BATCH_SIZE = 20
+
+export default function Feed({ onUserClick, onAuthRequired }) {
   const [videos, setVideos] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [activeVideo, setActiveVideo] = useState(null) // The video currently playing
+  const [loading, setLoading] = useState(false)
+  const [activeVideo, setActiveVideo] = useState(null)
+  const [commentVideoId, setCommentVideoId] = useState(null)
+  
+  const [currentTab, setCurrentTab] = useState('day') 
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+
+  const handlers = useSwipeable({
+    onSwipedLeft: () => {
+      if (currentTab === 'new') handleTabChange('day')
+      else if (currentTab === 'day') handleTabChange('week')
+    },
+    onSwipedRight: () => {
+      if (currentTab === 'week') handleTabChange('day')
+      else if (currentTab === 'day') handleTabChange('new')
+    },
+    trackMouse: true 
+  })
 
   useEffect(() => {
-    fetchTop5()
-  }, [])
+    setVideos([])
+    setPage(0)
+    setHasMore(true)
+    fetchVideos(0, currentTab) 
+  }, [currentTab])
 
-  const fetchTop5 = async () => {
+  const fetchVideos = async (pageNumber, tab) => {
     setLoading(true)
-    
-    // Calculate 24 hours ago
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
+    const from = pageNumber * BATCH_SIZE
+    const to = from + BATCH_SIZE - 1
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('videos')
-      .select('*')
-      .gt('created_at', yesterday.toISOString()) // Only videos newer than 24h
-      .order('average_rating', { ascending: false }) // Highest rating first
-      .limit(5) // Top 5 only
+      .select('*, profiles(username), comments(count)')
+      .range(from, to)
 
-    if (error) console.error('Error fetching feed:', error)
-    else setVideos(data || [])
-    
+    if (tab === 'new') {
+      query = query.order('created_at', { ascending: false })
+    } else {
+      const cutoffDate = new Date()
+      const daysToSubtract = tab === 'day' ? 1 : 7
+      cutoffDate.setDate(cutoffDate.getDate() - daysToSubtract)
+      
+      query = query.gt('created_at', cutoffDate.toISOString()).order('average_rating', { ascending: false })
+    }
+
+    const { data, error } = await query
+
+    if (error) console.error(error)
+    else {
+      if (data.length < BATCH_SIZE) setHasMore(false)
+      if (pageNumber === 0) setVideos(data)
+      else setVideos(prev => [...prev, ...data])
+    }
     setLoading(false)
   }
 
+  const handleTabChange = (newTab) => {
+    if (newTab === currentTab) return
+    setCurrentTab(newTab)
+  }
+
+  const handleScroll = (e) => {
+    const { scrollTop, clientHeight, scrollHeight } = e.currentTarget
+    if (scrollHeight - scrollTop <= clientHeight + 50 && !loading && hasMore) {
+      const nextPage = page + 1
+      setPage(nextPage)
+      fetchVideos(nextPage, currentTab)
+    }
+  }
+
   const handleRate = async (videoId, score) => {
-    // 1. Send rating to DB
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    await supabase.from('ratings').upsert({
-      user_id: user.id,
-      video_id: videoId,
-      score: score
-    })
-
-    // 2. (Optional) Refresh the list to see new rankings immediately?
-    // For now, we let it stay to prevent the video jumping while watching.
+    if (!user) {
+      if (onAuthRequired) onAuthRequired()
+      return 
+    }
+    await supabase.from('ratings').upsert({ user_id: user.id, video_id: videoId, score: score })
   }
 
-  // --- VIEW 1: THE ACTIVE VIDEO PLAYER ---
-  if (activeVideo) {
-    return (
-      <div className="fixed inset-0 z-40 bg-black">
-        <VideoPlayer 
-          videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
-          videoId={activeVideo.id}
-          initialRating={activeVideo.average_rating} // or fetch user's specific rating
-          onRate={handleRate}
-          onClose={() => setActiveVideo(null)} // Returns to list
-        />
-      </div>
-    )
-  }
+  const getCommentCount = (video) => video.comments?.[0]?.count || 0
 
-  // --- VIEW 2: THE TOP 5 LIST ---
   return (
-    <div className="w-full h-full overflow-y-auto p-4 pt-20 pb-32 bg-gradient-to-b from-gray-900 to-black">
+    <div 
+      {...handlers} 
+      onScroll={handleScroll} 
+      className="w-full h-full overflow-y-auto p-4 pt-28 pb-32 bg-gradient-to-b from-gray-900 to-black"
+    >
+      {commentVideoId && (
+        <CommentsOverlay 
+          videoId={commentVideoId} 
+          onClose={() => setCommentVideoId(null)} 
+          onAuthRequired={onAuthRequired}
+        />
+      )}
+
+      {activeVideo && (
+        <div className="fixed inset-0 z-40 bg-black">
+          <VideoPlayer 
+            videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
+            videoId={activeVideo.id}
+            initialRating={activeVideo.average_rating}
+            initialCommentCount={getCommentCount(activeVideo)}
+            onRate={handleRate}
+            onClose={() => setActiveVideo(null)}
+          />
+        </div>
+      )}
       
-      <div className="mb-8 text-center space-y-2">
-        <h2 className="text-3xl font-black text-white italic tracking-tighter">
-          DAILY TOP 5
+      <div className="mb-6 text-center space-y-4">
+        <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase animate-in fade-in slide-in-from-top-4 duration-500">
+          {currentTab === 'new' ? 'NEW TGTBTs' : currentTab === 'day' ? 'HOT FRESH' : 'TOP WEEKLY'}
         </h2>
-        <p className="text-gray-400 text-xs uppercase tracking-widest">
-          The best of the last 24 hours
-        </p>
+        
+        <div className="flex justify-center items-center gap-3 text-[10px] font-bold tracking-widest">
+          <button onClick={() => handleTabChange('new')} className={`transition-all duration-300 flex items-center gap-1 ${currentTab === 'new' ? 'text-green-400 scale-110 drop-shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
+            <Sparkles size={12} /> NEWEST
+          </button>
+          <span className="text-gray-700">|</span>
+          <button onClick={() => handleTabChange('day')} className={`transition-all duration-300 flex items-center gap-1 ${currentTab === 'day' ? 'text-blue-400 scale-110 drop-shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
+             HOT FRESH <Flame size={12} />
+          </button>
+          <span className="text-gray-700">|</span>
+          <button onClick={() => handleTabChange('week')} className={`transition-all duration-300 flex items-center gap-1 ${currentTab === 'week' ? 'text-fuchsia-500 scale-110 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
+            WEEKLY <CalendarDays size={12} />
+          </button>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center"><Loader2 className="animate-spin text-white" /></div>
-      ) : videos.length === 0 ? (
-        <div className="text-center text-gray-500 mt-10">
-          <p>No videos uploaded today.</p>
-          <p className="text-sm">Be the first!</p>
-        </div>
+      {videos.length === 0 && !loading ? (
+        <div className="text-center text-gray-500 mt-20"><p>No videos found.</p></div>
       ) : (
         <div className="space-y-4">
           {videos.map((video, index) => (
-            <div 
-              key={video.id}
-              onClick={() => setActiveVideo(video)}
-              className="group relative overflow-hidden rounded-xl bg-gray-800 border border-gray-700 p-4 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
-            >
-              {/* Rank Number Background */}
-              <span className="absolute -right-4 -bottom-6 text-9xl font-black text-white/5 select-none z-0">
-                {index + 1}
-              </span>
-
-              <div className="relative z-10 flex items-center gap-4">
+            <div key={video.id} className="group relative overflow-hidden rounded-xl bg-gray-800 border border-gray-700 p-4 transition hover:scale-[1.01]">
+              
+              <div onClick={() => setActiveVideo(video)} className="cursor-pointer relative z-10 flex items-center gap-4">
                 
-                {/* Rank Badge */}
-                <div className={`
-                  flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-black text-xl shadow-lg
-                  ${index === 0 ? 'bg-yellow-400 text-black' : 
-                    index === 1 ? 'bg-gray-300 text-black' : 
-                    index === 2 ? 'bg-orange-400 text-black' : 
-                    'bg-gray-700 text-white'}
-                `}>
-                  {index + 1}
+                {/* RANK / ICON CIRCLE */}
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-black text-xl shadow-lg ${
+                  currentTab === 'new' ? 'bg-gray-800 text-green-400 border border-gray-700' :
+                  index === 0 ? 'bg-yellow-400 text-black' : 
+                  index === 1 ? 'bg-gray-300 text-black' : 
+                  index === 2 ? 'bg-orange-400 text-black' : 
+                  'bg-gray-700 text-white'
+                }`}>
+                  {/* If NEWEST, show Icon. If others, show Rank Number */}
+                  {currentTab === 'new' ? <Sparkles size={20} /> : index + 1 + (page * BATCH_SIZE)}
                 </div>
 
-                {/* Title & Info */}
                 <div className="flex-1 min-w-0">
                   <h3 className="truncate text-lg font-bold text-white group-hover:text-blue-400 transition-colors">
                     {video.title}
                   </h3>
-                  <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-                    <span className="flex items-center gap-1 text-yellow-400">
-                      ★ {video.average_rating?.toFixed(1) || '0.0'}
-                    </span>
-                    <span>•</span>
-                    <span>{new Date(video.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                  
+                  <div className="flex items-center gap-4 text-xs mt-1">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); if(onUserClick) onUserClick(video.user_id); }}
+                      className="flex items-center gap-1 text-fuchsia-500 font-bold hover:text-fuchsia-400 hover:underline z-20"
+                    >
+                      <User size={14} /> {video.profiles?.username || 'Unknown'}
+                    </button>
+                    
+                    <div className="flex items-center gap-3">
+                      {currentTab === 'new' ? (
+                        <span className="text-gray-400 text-[10px]">
+                          {new Date(video.created_at).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : (
+                        <span className="text-yellow-400 flex items-center gap-1">
+                           ★ {video.average_rating?.toFixed(1) || '0.0'}
+                        </span>
+                      )}
+
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation() 
+                          setCommentVideoId(video.id)
+                        }}
+                        className="flex items-center gap-1 text-gray-400 hover:text-white transition z-20"
+                      >
+                        <MessageCircle size={14} />
+                        <span className="text-[10px]">Comments ({getCommentCount(video)})</span>
+                      </button>
+                    </div>
+
                   </div>
                 </div>
-
-                {/* Play Icon */}
                 <PlayCircle className="text-gray-500 group-hover:text-white transition-colors" size={28} />
-                
               </div>
             </div>
           ))}
+          {loading && <div className="flex justify-center py-4"><Loader2 className="animate-spin text-white" /></div>}
+          {!hasMore && videos.length > 0 && <div className="text-center text-gray-600 text-xs py-4 uppercase tracking-widest">You've reached the end</div>}
         </div>
       )}
     </div>

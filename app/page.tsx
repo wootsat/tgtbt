@@ -4,180 +4,218 @@ import { supabase } from '@/lib/supabaseClient'
 import UploadVideo from '@/components/UploadVideo'
 import UserProfile from '@/components/UserProfile'
 import Feed from '@/components/Feed' 
-import { LogOut, PlusCircle, X, User, Home as HomeIcon } from 'lucide-react'
+import { LogOut, PlusCircle, X, User, Home as HomeIcon, CheckCircle, XCircle, Loader2, LogIn } from 'lucide-react'
 
 export default function Home() {
   const [session, setSession] = useState(null)
   
-  // Auth State
+  // Auth Form State
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isSignUpMode, setIsSignUpMode] = useState(false)
+  const [usernameStatus, setUsernameStatus] = useState('idle') 
   
-  // App State
+  // App View State
   const [showUpload, setShowUpload] = useState(false)
-  const [currentView, setCurrentView] = useState('feed') // 'feed' or 'profile'
+  const [showAuth, setShowAuth] = useState(false)
+  const [viewMode, setViewMode] = useState('feed') 
+  const [targetProfileId, setTargetProfileId] = useState(null)
 
-  // 1. Check for User Session on Load
+  // 1. Session Check
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
     return () => subscription.unsubscribe()
   }, [])
 
-  // Auth Handlers
+  // 2. Username Check (Debounced)
+  useEffect(() => {
+    if (!username || !isSignUpMode) {
+      setUsernameStatus('idle')
+      return
+    }
+    const checkAvailability = setTimeout(async () => {
+      setUsernameStatus('checking')
+      const { data } = await supabase.from('profiles').select('username').ilike('username', username).single()
+      if (data) setUsernameStatus('invalid')
+      else setUsernameStatus('valid')
+    }, 500) 
+    return () => clearTimeout(checkAvailability)
+  }, [username, isSignUpMode])
+
+  // 3. Auth Handlers
   const handleLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) alert(error.message)
+    else setShowAuth(false) 
     setLoading(false)
   }
 
   const handleSignUp = async (e) => {
     e.preventDefault()
+    if(!username) return alert("Please pick a username")
+    if(usernameStatus === 'invalid') return alert("Username already taken!")
     setLoading(true)
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) alert(error.message)
-    else alert('Check your email for the login link!')
+    else if (data?.user) {
+      const { error: profileError } = await supabase.from('profiles').insert({ id: data.user.id, username: username })
+      if (profileError) alert("Username taken! Please try another.")
+      else {
+        alert('Success! Check your email.')
+        setShowAuth(false)
+      }
+    }
     setLoading(false)
   }
 
-  // --- VIEW 1: LOGIN SCREEN (If not logged in) ---
-  if (!session) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-black p-4">
-        <div className="w-full max-w-sm space-y-6 rounded-2xl bg-gray-900 p-8 text-white shadow-2xl border border-gray-800">
-          <div className="text-center">
-            <h1 className="text-4xl font-black tracking-tighter text-white mb-2">TGTBT</h1>
-            <p className="text-gray-400 text-sm uppercase tracking-widest">Too Good To Be True</p>
-          </div>
-          
-          <form className="space-y-4">
-            <input
-              className="w-full rounded-lg bg-gray-800 p-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              className="w-full rounded-lg bg-gray-800 p-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            
-            <div className="flex gap-3 pt-2">
-              <button 
-                onClick={handleLogin} 
-                disabled={loading}
-                className="flex-1 rounded-lg bg-blue-600 p-3 font-bold hover:bg-blue-700 disabled:opacity-50 transition"
-              >
-                {loading ? '...' : 'Log In'}
-              </button>
-              <button 
-                onClick={handleSignUp} 
-                disabled={loading}
-                className="flex-1 rounded-lg border border-gray-600 p-3 font-bold hover:bg-gray-800 disabled:opacity-50 transition"
-              >
-                Sign Up
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )
+  // Helper: Triggers Auth if guest, otherwise does action
+  const requireAuth = (action) => {
+    if (!session) {
+      setIsSignUpMode(true) 
+      setShowAuth(true)
+    } else {
+      action()
+    }
   }
 
-  // --- VIEW 2: MAIN APP (If logged in) ---
+  // Helper: Check if we are currently viewing our OWN profile
+  const isMyProfile = viewMode === 'profile' && session && targetProfileId === session.user.id
+
+  // --- MAIN APP RENDER ---
   return (
     <main className="flex min-h-screen flex-col items-center bg-black text-white overflow-hidden">
       
-      {/* Header / Navbar */}
-      <div className="w-full max-w-md p-4 flex justify-between items-center z-20 absolute top-0 bg-gradient-to-b from-black/90 to-transparent">
-        {/* Logo / Home Button */}
-        <button 
-          onClick={() => setCurrentView('feed')} 
-          className="font-black text-xl tracking-tighter drop-shadow-md text-white hover:text-gray-300 transition"
-        >
-          TGTBT
+      {/* NAVBAR */}
+      <div className="w-full max-w-2xl p-4 flex justify-between items-center z-20 absolute top-0 bg-gradient-to-b from-black/90 to-transparent">
+        
+        {/* Logo - Always goes to Feed */}
+        <button onClick={() => setViewMode('feed')} className="hover:opacity-80 transition">
+          <img src="/tgtbt_logo.png" alt="TGTBT" className="h-24 w-auto object-contain" />
         </button>
         
-        <div className="flex items-center gap-5">
-           {/* Navigation Switch (Feed <-> Profile) */}
+        <div className="flex items-center gap-6">
+          
+          {/* PROFILE / HOME TOGGLE BUTTON */}
           <button 
-            onClick={() => setCurrentView(currentView === 'feed' ? 'profile' : 'feed')}
-            className="text-white hover:text-blue-400 transition"
+            onClick={() => requireAuth(() => {
+              if (isMyProfile) {
+                // If I'm on my profile (House Icon), go to Feed
+                setViewMode('feed')
+              } else {
+                // If I'm anywhere else, go to My Profile
+                setTargetProfileId(session.user.id)
+                setViewMode('profile')
+              }
+            })}
+            className={`transition ${isMyProfile ? 'text-blue-400' : 'text-white'}`}
           >
-            {currentView === 'feed' ? <User size={26} /> : <HomeIcon size={26} />}
+            {isMyProfile ? <HomeIcon size={28} /> : <User size={28} />}
           </button>
 
           {/* Upload Button */}
-          <button 
-            onClick={() => setShowUpload(true)}
-            className="text-white hover:text-blue-400 transition transform hover:scale-110"
-          >
-            <PlusCircle size={28} />
+          <button onClick={() => requireAuth(() => setShowUpload(true))} className="text-white hover:text-blue-400 transition transform hover:scale-110">
+            <PlusCircle size={30} />
           </button>
           
-          {/* Sign Out */}
-          <button 
-            onClick={() => supabase.auth.signOut()} 
-            className="text-gray-400 hover:text-white transition"
-          >
-            <LogOut size={24} />
-          </button>
+          {/* Sign Out / Log In Switch */}
+          {session ? (
+            <button onClick={() => supabase.auth.signOut()} className="text-gray-400 hover:text-white transition">
+              <LogOut size={26} />
+            </button>
+          ) : (
+            <button onClick={() => { setIsSignUpMode(false); setShowAuth(true); }} className="text-blue-400 font-bold hover:text-white transition flex items-center gap-1">
+              Log In <LogIn size={20} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 w-full max-w-md h-[100dvh] relative bg-gray-900">
-        
-        {currentView === 'feed' ? (
-           // --- THE FEED VIEW (Top 5 List) ---
+      {/* CONTENT AREA */}
+      <div className="flex-1 w-full max-w-2xl h-[100dvh] relative bg-gray-900">
+        {viewMode === 'feed' && (
            <div className="h-full">
-             <Feed />
-           </div>
-        ) : (
-           // --- THE PROFILE VIEW ---
-           <div className="pt-20 h-full">
-             <UserProfile session={session} />
+             <Feed 
+               onAuthRequired={() => {
+                 setIsSignUpMode(true)
+                 setShowAuth(true)
+               }}
+               onUserClick={(userId) => {
+                 setTargetProfileId(userId)
+                 setViewMode('profile')
+               }} 
+             />
            </div>
         )}
 
+        {viewMode === 'profile' && (
+           <div className="pt-28 h-full">
+             <UserProfile 
+               session={session} 
+               targetUserId={targetProfileId} 
+               onBack={() => setViewMode('feed')} 
+             />
+           </div>
+        )}
       </div>
 
-      {/* Upload Overlay Modal */}
+      {/* UPLOAD OVERLAY */}
       {showUpload && (
-        <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md relative">
-            
-            {/* Close Button */}
-            <button 
-              onClick={() => setShowUpload(false)}
-              className="absolute -top-12 right-0 text-gray-400 hover:text-white"
-            >
-              <X size={32} />
-            </button>
-
-            {/* The Upload Component */}
-            <UploadVideo onUploadComplete={() => {
-              setShowUpload(false)
-            }} />
-            
+        <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg relative">
+            <button onClick={() => setShowUpload(false)} className="absolute -top-12 right-0 text-gray-400 hover:text-white"><X size={32} /></button>
+            <UploadVideo onUploadComplete={() => setShowUpload(false)} />
           </div>
         </div>
       )}
+
+      {/* AUTH OVERLAY (Login/Signup) */}
+      {showAuth && (
+        <div className="absolute inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-200">
+           <div className="w-full max-w-md space-y-6 rounded-2xl bg-gray-900 p-8 text-white shadow-2xl border border-gray-800 relative">
+              
+              <button onClick={() => setShowAuth(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
+
+              <div className="flex justify-center mb-4">
+                <img src="/tgtbt_logo.png" alt="TGTBT Logo" className="h-24 w-auto object-contain" />
+              </div>
+
+              <h2 className="text-center text-xl font-bold text-white mb-2">
+                {isSignUpMode ? "Join to Rate & Upload" : "Welcome Back"}
+              </h2>
+
+              <form className="space-y-4">
+                <input className="w-full rounded-lg bg-gray-800 p-4 text-white focus:ring-2 focus:ring-blue-500" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <input className="w-full rounded-lg bg-gray-800 p-4 text-white focus:ring-2 focus:ring-blue-500" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                
+                {isSignUpMode && (
+                  <div className="relative">
+                    <input className={`w-full rounded-lg bg-gray-800 p-4 text-white focus:ring-2 ${usernameStatus === 'valid' ? 'focus:ring-green-500' : usernameStatus === 'invalid' ? 'focus:ring-red-500' : 'focus:ring-blue-500'}`} type="text" placeholder="Pick a Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                    <div className="absolute right-4 top-4">
+                      {usernameStatus === 'checking' && <Loader2 className="animate-spin text-blue-400" />}
+                      {usernameStatus === 'valid' && <CheckCircle className="text-green-500" />}
+                      {usernameStatus === 'invalid' && <XCircle className="text-red-500" />}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex flex-col gap-3 pt-2">
+                  <button onClick={isSignUpMode ? handleSignUp : handleLogin} disabled={loading || (isSignUpMode && usernameStatus !== 'valid')} className="w-full rounded-lg bg-blue-600 p-3 font-bold hover:bg-blue-700 disabled:opacity-50 transition">
+                     {loading ? 'Processing...' : isSignUpMode ? 'Sign Up' : 'Log In'}
+                  </button>
+                  <button type="button" onClick={() => setIsSignUpMode(!isSignUpMode)} className="text-gray-400 text-sm hover:text-white transition">
+                    {isSignUpMode ? "Already have an account? Log In" : "Need an account? Sign Up"}
+                  </button>
+                </div>
+              </form>
+           </div>
+        </div>
+      )}
+
     </main>
   )
 }
