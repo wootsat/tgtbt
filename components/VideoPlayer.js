@@ -3,6 +3,7 @@ import { useRef, useEffect, useState } from 'react'
 import { X, Star, MessageCircle, Play, Volume2, VolumeX, Share2 } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 
+// CRITICAL FIX: Ensure 'videoId' is listed inside these curly braces { }
 export default function VideoPlayer({ videoSrc, videoId, initialRating, initialCommentCount = 0, onRate, onClose, onUserClick }) {
   const videoRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(true)
@@ -13,11 +14,15 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
   const [isMuted, setIsMuted] = useState(false)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
+  // Debug check: If this logs "undefined", the prop isn't being passed correctly from Feed.js
   useEffect(() => {
+    if (!videoId) console.error("VideoPlayer Error: No videoId provided!")
+    else console.log("VideoPlayer loaded with ID:", videoId)
+    
     if (videoRef.current) {
       videoRef.current.play().catch(e => console.log("Autoplay prevented", e))
     }
-  }, [])
+  }, [videoId])
 
   const togglePlay = (e) => {
     e.stopPropagation()
@@ -43,6 +48,13 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
 
   const handleShare = async (e) => {
     e.stopPropagation()
+    
+    // Safety check prevents "undefined" links
+    if (!videoId) {
+      alert("Error: Cannot share video (Missing ID)")
+      return
+    }
+
     const shareUrl = `https://tgtbt.xyz/watch/${videoId}`
     
     if (navigator.share) {
@@ -78,14 +90,12 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
         onClick={togglePlay}
       />
 
-      {/* --- NEW: WATERMARK LOGO --- */}
-      {/* pointer-events-none ensures clicks pass through it */}
+      {/* Watermark Logo */}
       <img 
         src="/tgtbt_logo.png" 
         alt="TGTBT" 
         className="absolute bottom-4 right-4 w-16 h-auto opacity-50 pointer-events-none z-10 select-none"
       />
-      {/* --------------------------- */}
 
       {/* Big Play Icon Overlay */}
       {!isPlaying && !showComments && (
@@ -96,7 +106,6 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
 
       {/* Controls Overlay */}
       {!showComments && (
-        // Added z-20 to ensure controls sit above the watermark
         <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20">
           <div className="flex flex-col gap-4 items-center animate-in slide-in-from-bottom-4">
             
@@ -118,7 +127,7 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
               ))}
             </div>
 
-            {/* Bottom Buttons (Mute, Comments, Share) */}
+            {/* Bottom Buttons */}
             <div className="flex items-center gap-6 mt-2">
               <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                 {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
