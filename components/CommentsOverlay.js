@@ -2,9 +2,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { X, Send, Loader2, User } from 'lucide-react'
-import { maskProfanity } from '@/lib/filter' // <--- IMPORTED
+import { maskProfanity } from '@/lib/filter'
 
-export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isInsidePlayer, onCommentAdded }) {
+export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isInsidePlayer, onCommentAdded, onUserClick }) {
   const [comments, setComments] = useState([])
   const [newComment, setNewComment] = useState('')
   const [loading, setLoading] = useState(true)
@@ -45,7 +45,7 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
       .insert({ 
         user_id: user.id, 
         video_id: videoId, 
-        text: maskProfanity(newComment.trim()) // <--- COMMENT MASKED HERE
+        text: maskProfanity(newComment.trim()) 
       })
 
     if (error) {
@@ -88,9 +88,17 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
                   <User size={14} className="text-gray-300" />
                 </div>
                 <div className="bg-gray-800/80 rounded-2xl rounded-tl-none p-3 max-w-[85%]">
-                  <p className="text-xs text-blue-400 font-bold mb-1">
+                  {/* UPDATED: Username is now a clickable button */}
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if(onUserClick) onUserClick(comment.user_id)
+                    }}
+                    className="text-xs text-blue-400 font-bold mb-1 hover:text-blue-300 hover:underline text-left block"
+                  >
                     {comment.profiles?.username || 'Unknown'}
-                  </p>
+                  </button>
+                  
                   <p className="text-sm text-gray-200 leading-relaxed break-words">
                     {comment.text}
                   </p>

@@ -3,8 +3,8 @@ import { useRef, useEffect, useState } from 'react'
 import { X, Star, MessageCircle, Play, Pause, Volume2, VolumeX } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 
-// Added initialCommentCount prop
-export default function VideoPlayer({ videoSrc, videoId, initialRating, initialCommentCount = 0, onRate, onClose }) {
+// Added onUserClick to props
+export default function VideoPlayer({ videoSrc, videoId, initialRating, initialCommentCount = 0, onRate, onClose, onUserClick }) {
   const videoRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(true)
   const [rating, setRating] = useState(initialRating || 0)
@@ -12,8 +12,6 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
   const [hoverRating, setHoverRating] = useState(0)
   const [showComments, setShowComments] = useState(false) 
   const [isMuted, setIsMuted] = useState(false)
-  
-  // Track comment count locally so it updates if user comments
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
   useEffect(() => {
@@ -92,7 +90,6 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
                 {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
               </button>
 
-              {/* UPDATED BUTTON WITH COUNT */}
               <button 
                 onClick={() => setShowComments(true)}
                 className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full backdrop-blur-md border border-white/10 transition"
@@ -111,8 +108,9 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
             videoId={videoId} 
             onClose={() => setShowComments(false)} 
             isInsidePlayer={true}
-            // Increase count when user comments successfully
             onCommentAdded={() => setCommentCount(prev => prev + 1)}
+            // Pass it down here
+            onUserClick={onUserClick}
           />
         </div>
       )}

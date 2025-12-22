@@ -18,7 +18,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
 
-  // --- HISTORY / BACK BUTTON LOGIC ---
   const historyPushedRef = useRef(false)
 
   useEffect(() => {
@@ -50,9 +49,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       setActiveVideo(null)
     }
   }
-  // ------------------------------------
 
-  // --- SWIPE LOGIC (WRAPAROUND) ---
   const handlers = useSwipeable({
     onSwipedLeft: () => {
       if (currentTab === 'new') handleTabChange('day')
@@ -67,7 +64,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
     trackMouse: true 
   })
 
-  // --- DATA FETCHING ---
   useEffect(() => {
     setVideos([])
     setPage(0)
@@ -120,7 +116,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
     }
   }
 
-  // --- RATING LOGIC (INSTANT UPDATE) ---
   const handleRate = async (videoId, score) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -128,14 +123,8 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       return 
     }
 
-    // UPDATED: Added { onConflict: 'user_id, video_id' }
-    // This tells Supabase: "If this combination exists, just update the score."
     const { error } = await supabase.from('ratings').upsert(
-      { 
-        user_id: user.id, 
-        video_id: videoId, 
-        score: score 
-      }, 
+      { user_id: user.id, video_id: videoId, score: score }, 
       { onConflict: 'user_id, video_id' }
     )
 
@@ -144,7 +133,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       return
     }
 
-    // 2. Small delay to let the database trigger finish the math
     setTimeout(async () => {
       const { data: updatedVideo } = await supabase
         .from('videos')
@@ -152,12 +140,10 @@ export default function Feed({ onUserClick, onAuthRequired }) {
         .eq('id', videoId)
         .single()
 
-      // 3. Update the UI
       if (updatedVideo) {
         setVideos(prevVideos => prevVideos.map(v => 
           v.id === videoId ? { ...v, average_rating: updatedVideo.average_rating } : v
         ))
-        
         if (activeVideo && activeVideo.id === videoId) {
           setActiveVideo(prev => ({ ...prev, average_rating: updatedVideo.average_rating }))
         }
@@ -173,16 +159,17 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       onScroll={handleScroll} 
       className="w-full h-full overflow-y-auto p-4 pt-28 pb-32 bg-gradient-to-b from-gray-900 to-black"
     >
-      {/* COMMENTS OVERLAY */}
+      {/* 1. PASS onUserClick TO OVERLAY */}
       {commentVideoId && (
         <CommentsOverlay 
           videoId={commentVideoId} 
           onClose={() => setCommentVideoId(null)} 
           onAuthRequired={onAuthRequired}
+          onUserClick={onUserClick}
         />
       )}
 
-      {/* VIDEO PLAYER */}
+      {/* 2. PASS onUserClick TO VIDEO PLAYER */}
       {activeVideo && (
         <div className="fixed inset-0 z-40 bg-black">
           <VideoPlayer 
@@ -192,14 +179,14 @@ export default function Feed({ onUserClick, onAuthRequired }) {
             initialCommentCount={getCommentCount(activeVideo)}
             onRate={handleRate}
             onClose={closeVideo} 
+            onUserClick={onUserClick}
           />
         </div>
       )}
       
-      {/* HEADER */}
       <div className="mb-6 text-center space-y-4">
         <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase animate-in fade-in slide-in-from-top-4 duration-500">
-          {currentTab === 'new' ? 'NEWEST TGTBTs' : currentTab === 'day' ? 'HOT FRESH' : 'TOP WEEKLY'}
+          {currentTab === 'new' ? 'NEW TGTBTs' : currentTab === 'day' ? 'HOT FRESH' : 'TOP WEEKLY'}
         </h2>
         
         <div className="flex justify-center items-center gap-3 text-[10px] font-bold tracking-widest">
@@ -212,7 +199,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
           </button>
           <span className="text-gray-700">|</span>
           <button onClick={() => handleTabChange('week')} className={`transition-all duration-300 flex items-center gap-1 ${currentTab === 'week' ? 'text-fuchsia-500 scale-110 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
-            TOP WEEKLY <CalendarDays size={12} />
+            WEEKLY <CalendarDays size={12} />
           </button>
         </div>
 
@@ -221,7 +208,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
         </p>
       </div>
 
-      {/* VIDEO LIST */}
       {videos.length === 0 && !loading ? (
         <div className="text-center text-gray-500 mt-20"><p>No videos found.</p></div>
       ) : (
@@ -231,7 +217,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
               
               <div onClick={() => setActiveVideo(video)} className="cursor-pointer relative z-10 flex items-center gap-4">
                 
-                {/* RANK ICON OR NUMBER */}
                 <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-black text-xl shadow-lg ${
                   currentTab === 'new' ? 'bg-gray-800 text-green-400 border border-gray-700' :
                   index === 0 ? 'bg-yellow-400 text-black' : 
@@ -256,7 +241,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                     </button>
                     
                     <div className="flex items-center gap-3">
-                      {/* DATE OR RATING */}
                       {currentTab === 'new' ? (
                         <span className="text-gray-400 text-[10px]">
                           {new Date(video.created_at).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -267,7 +251,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                         </span>
                       )}
 
-                      {/* COMMENTS BUTTON */}
                       <button 
                         onClick={(e) => {
                           e.stopPropagation() 
