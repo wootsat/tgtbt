@@ -3,7 +3,6 @@ import { useRef, useEffect, useState } from 'react'
 import { X, Star, MessageCircle, Play, Volume2, VolumeX, Share2 } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 
-// CRITICAL FIX: Ensure 'videoId' is listed inside these curly braces { }
 export default function VideoPlayer({ videoSrc, videoId, initialRating, initialCommentCount = 0, onRate, onClose, onUserClick }) {
   const videoRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(true)
@@ -11,18 +10,39 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
   const [userRating, setUserRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
   const [showComments, setShowComments] = useState(false) 
-  const [isMuted, setIsMuted] = useState(false)
+  
+  // Default to muted to ensure autoplay works on mobile/fresh loads
+  const [isMuted, setIsMuted] = useState(true)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // Debug check: If this logs "undefined", the prop isn't being passed correctly from Feed.js
+  // --- ROBUST AUTOPLAY LOGIC ---
   useEffect(() => {
-    if (!videoId) console.error("VideoPlayer Error: No videoId provided!")
-    else console.log("VideoPlayer loaded with ID:", videoId)
-    
-    if (videoRef.current) {
-      videoRef.current.play().catch(e => console.log("Autoplay prevented", e))
+    const startVideo = async () => {
+      if (!videoRef.current) return
+
+      try {
+        // 1. Try to play (browser might block this if unmuted)
+        await videoRef.current.play()
+        setIsPlaying(true)
+      } catch (err) {
+        console.log("Autoplay with sound blocked. Switching to muted.")
+        // 2. If blocked, force mute and play again
+        if (videoRef.current) {
+          videoRef.current.muted = true
+          setIsMuted(true)
+          try {
+            await videoRef.current.play()
+            setIsPlaying(true)
+          } catch (e) {
+            console.error("Autoplay failed completely", e)
+            setIsPlaying(false)
+          }
+        }
+      }
     }
-  }, [videoId])
+
+    startVideo()
+  }, [videoId]) // Run whenever videoId changes
 
   const togglePlay = (e) => {
     e.stopPropagation()
@@ -42,18 +62,15 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
 
   const toggleMute = (e) => {
     e.stopPropagation()
+    if (!videoRef.current) return
+    
     videoRef.current.muted = !videoRef.current.muted
-    setIsMuted(!isMuted)
+    setIsMuted(videoRef.current.muted)
   }
 
   const handleShare = async (e) => {
     e.stopPropagation()
-    
-    // Safety check prevents "undefined" links
-    if (!videoId) {
-      alert("Error: Cannot share video (Missing ID)")
-      return
-    }
+    if (!videoId) return alert("Error: Cannot share video (Missing ID)")
 
     const shareUrl = `https://tgtbt.xyz/watch/${videoId}`
     
@@ -87,17 +104,21 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
         className="max-h-full max-w-full w-auto h-auto object-contain cursor-pointer"
         loop
         playsInline
+        autoPlay
+        muted={isMuted}
         onClick={togglePlay}
       />
 
-      {/* Watermark Logo */}
+      {/* --- WATERMARK LOGO (UPDATED SIZE) --- */}
       <img 
         src="/tgtbt_logo.png" 
         alt="TGTBT" 
-        className="absolute bottom-4 right-4 w-16 h-auto opacity-50 pointer-events-none z-10 select-none"
+        // Changed w-16 to w-80 (5x bigger). Adjusted bottom/right spacing slightly.
+        className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none"
       />
+      {/* ------------------------------------- */}
 
-      {/* Big Play Icon Overlay */}
+      {/* Big Play Icon Overlay (Only shows if paused) */}
       {!isPlaying && !showComments && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
           <Play size={64} className="text-white/50" fill="currentColor" />
@@ -129,10 +150,12 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
 
             {/* Bottom Buttons */}
             <div className="flex items-center gap-6 mt-2">
+              {/* Mute Button */}
               <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                 {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
               </button>
 
+              {/* Comments Button */}
               <button 
                 onClick={() => setShowComments(true)}
                 className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full backdrop-blur-md border border-white/10 transition"
@@ -141,6 +164,7 @@ export default function VideoPlayer({ videoSrc, videoId, initialRating, initialC
                 <span className="text-sm font-bold">Comments ({commentCount})</span>
               </button>
 
+              {/* Share Button */}
               <button 
                 onClick={handleShare}
                 className="text-white/80 hover:text-white transition transform hover:scale-110"
