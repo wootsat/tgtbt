@@ -67,15 +67,25 @@ export default function Home() {
     if(usernameStatus === 'invalid') return alert("Username already taken or invalid!")
     
     setLoading(true)
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    if (error) alert(error.message)
-    else if (data?.user) {
-      const { error: profileError } = await supabase.from('profiles').insert({ id: data.user.id, username: username })
-      if (profileError) alert("Username taken! Please try another.")
-      else {
-        alert('Success! Check your email.')
-        setShowAuth(false)
+    
+    // UPDATED SIGN UP LOGIC
+    const { data, error } = await supabase.auth.signUp({ 
+      email, 
+      password,
+      // We pass the username here, and the SQL Trigger handles the rest!
+      options: {
+        data: {
+          username: username
+        }
       }
+    })
+
+    if (error) {
+      alert(error.message)
+    } else {
+      // Success! No need to manually insert into 'profiles' anymore.
+      alert('Success! Check your email to verify your account.')
+      setShowAuth(false)
     }
     setLoading(false)
   }
