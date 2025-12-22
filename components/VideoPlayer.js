@@ -12,11 +12,12 @@ export default function VideoPlayer({
   onRate, 
   onClose, 
   onUserClick,
-  startMuted = true,
+  startMuted = true, // Feed passes 'false', Share passes 'true'
   showHomeButton = false 
 }) {
   const videoRef = useRef(null)
   
+  // State
   const [rating, setRating] = useState(initialRating || 0)
   const [userRating, setUserRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
@@ -24,22 +25,18 @@ export default function VideoPlayer({
   const [showControls, setShowControls] = useState(false)
   const [showComments, setShowComments] = useState(false) 
   
-  // Initialize state based on prop
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // --- PLAYBACK LOGIC ---
+  // --- LOGIC ---
   useEffect(() => {
-    // We only need special logic for the "Share Link" case (startMuted=true).
-    // For the "App" case (startMuted=false), we trust the 'autoPlay' attribute 
-    // because the user has already clicked.
+    // We only interfere if we strictly NEED it to be muted (Share Link).
+    // If startMuted is false (App), we do NOTHING and let the <video autoPlay> 
+    // tag do its native job. This is the fastest, most reliable method.
     if (startMuted && videoRef.current) {
       videoRef.current.muted = true
-      videoRef.current.play().catch(err => {
-        console.log("Autoplay blocked, ensuring mute:", err)
-        videoRef.current.muted = true
-        videoRef.current.play().catch(e => console.error(e))
-      })
+      // We catch errors just in case, but usually muted autoplay always works
+      videoRef.current.play().catch(e => console.log("Muted autoplay fallback", e))
     }
   }, [startMuted, videoId])
 
@@ -75,7 +72,7 @@ export default function VideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
       
-      {/* --- HOME LOGO (Only for Share Page) --- */}
+      {/* Home Button (Share View only) */}
       {showHomeButton && (
         <Link 
           href="/"
@@ -86,7 +83,7 @@ export default function VideoPlayer({
         </Link>
       )}
 
-      {/* --- CLOSE BUTTON --- */}
+      {/* Close Button */}
       <button 
         onClick={onClose} 
         className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
@@ -94,16 +91,18 @@ export default function VideoPlayer({
         <X size={36} strokeWidth={3} />
       </button>
 
-      {/* --- VIDEO --- */}
-      {/* RESTORED: 'autoPlay' attribute matches the Profile behavior */}
+      {/* Main Video */}
       <video 
         ref={videoRef}
         src={videoSrc}
         className="max-h-full max-w-full w-auto h-auto object-contain"
         loop
         playsInline
-        autoPlay 
-        muted={isMuted} 
+        autoPlay
+        // MAGIC FIX: We set the property directly based on the prop.
+        // If startMuted is false, this attribute is removed entirely by React,
+        // allowing the browser to treat it as a standard "sound on" video.
+        muted={startMuted} 
       />
 
       {/* Watermark */}
@@ -113,7 +112,7 @@ export default function VideoPlayer({
         className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none"
       />
 
-      {/* --- CONTROLS --- */}
+      {/* Controls */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
