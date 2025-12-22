@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, PlayCircle, User, Flame, CalendarDays, Sparkles, MessageCircle } from 'lucide-react'
+import { Loader2, PlayCircle, User, Flame, CalendarDays, Sparkles, MessageCircle, Share2 } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
 import CommentsOverlay from '@/components/CommentsOverlay'
 import { useSwipeable } from 'react-swipeable'
@@ -18,6 +18,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
 
+  // --- HISTORY / BACK BUTTON LOGIC ---
   const historyPushedRef = useRef(false)
 
   useEffect(() => {
@@ -50,6 +51,27 @@ export default function Feed({ onUserClick, onAuthRequired }) {
     }
   }
 
+  // --- SHARE LOGIC ---
+  const handleShare = async (e, videoId) => {
+    e.stopPropagation()
+    const shareUrl = `https://tgtbt.xyz/watch/${videoId}`
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Check out this video on TGTBT',
+          url: shareUrl
+        })
+      } catch (err) {
+        // User cancelled share
+      }
+    } else {
+      navigator.clipboard.writeText(shareUrl)
+      alert('Link copied to clipboard!')
+    }
+  }
+
+  // --- SWIPE LOGIC ---
   const handlers = useSwipeable({
     onSwipedLeft: () => {
       if (currentTab === 'new') handleTabChange('day')
@@ -64,6 +86,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
     trackMouse: true 
   })
 
+  // --- DATA FETCHING ---
   useEffect(() => {
     setVideos([])
     setPage(0)
@@ -116,6 +139,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
     }
   }
 
+  // --- RATING LOGIC ---
   const handleRate = async (videoId, score) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -123,6 +147,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       return 
     }
 
+    // Upsert with conflict handling
     const { error } = await supabase.from('ratings').upsert(
       { user_id: user.id, video_id: videoId, score: score }, 
       { onConflict: 'user_id, video_id' }
@@ -133,6 +158,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       return
     }
 
+    // Instant UI update via fetch
     setTimeout(async () => {
       const { data: updatedVideo } = await supabase
         .from('videos')
@@ -159,7 +185,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       onScroll={handleScroll} 
       className="w-full h-full overflow-y-auto p-4 pt-28 pb-32 bg-gradient-to-b from-gray-900 to-black"
     >
-      {/* 1. PASS onUserClick TO OVERLAY */}
+      {/* COMMENTS OVERLAY */}
       {commentVideoId && (
         <CommentsOverlay 
           videoId={commentVideoId} 
@@ -169,7 +195,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
         />
       )}
 
-      {/* 2. PASS onUserClick TO VIDEO PLAYER */}
+      {/* VIDEO PLAYER MODAL */}
       {activeVideo && (
         <div className="fixed inset-0 z-40 bg-black">
           <VideoPlayer 
@@ -184,6 +210,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
         </div>
       )}
       
+      {/* FEED HEADER */}
       <div className="mb-6 text-center space-y-4">
         <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase animate-in fade-in slide-in-from-top-4 duration-500">
           {currentTab === 'new' ? 'NEW TGTBTs' : currentTab === 'day' ? 'HOT FRESH' : 'TOP WEEKLY'}
@@ -208,6 +235,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
         </p>
       </div>
 
+      {/* FEED CONTENT */}
       {videos.length === 0 && !loading ? (
         <div className="text-center text-gray-500 mt-20"><p>No videos found.</p></div>
       ) : (
@@ -217,6 +245,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
               
               <div onClick={() => setActiveVideo(video)} className="cursor-pointer relative z-10 flex items-center gap-4">
                 
+                {/* RANKING OR ICON */}
                 <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-black text-xl shadow-lg ${
                   currentTab === 'new' ? 'bg-gray-800 text-green-400 border border-gray-700' :
                   index === 0 ? 'bg-yellow-400 text-black' : 
@@ -227,6 +256,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                   {currentTab === 'new' ? <Sparkles size={20} /> : index + 1 + (page * BATCH_SIZE)}
                 </div>
 
+                {/* VIDEO INFO */}
                 <div className="flex-1 min-w-0">
                   <h3 className="truncate text-lg font-bold text-white group-hover:text-blue-400 transition-colors">
                     {video.title}
@@ -241,6 +271,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                     </button>
                     
                     <div className="flex items-center gap-3">
+                      {/* DATE OR RATING */}
                       {currentTab === 'new' ? (
                         <span className="text-gray-400 text-[10px]">
                           {new Date(video.created_at).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -251,6 +282,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                         </span>
                       )}
 
+                      {/* COMMENTS BUTTON */}
                       <button 
                         onClick={(e) => {
                           e.stopPropagation() 
@@ -261,6 +293,15 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                         <MessageCircle size={14} />
                         <span className="text-[10px]">Comments ({getCommentCount(video)})</span>
                       </button>
+
+                      {/* SHARE BUTTON */}
+                      <button 
+                        onClick={(e) => handleShare(e, video.id)}
+                        className="flex items-center gap-1 text-gray-400 hover:text-white transition z-20 ml-2"
+                      >
+                        <Share2 size={14} />
+                      </button>
+
                     </div>
 
                   </div>
