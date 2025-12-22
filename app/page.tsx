@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabaseClient'
 import UploadVideo from '@/components/UploadVideo'
 import UserProfile from '@/components/UserProfile'
 import Feed from '@/components/Feed' 
-import { LogOut, PlusCircle, X, User, Home as HomeIcon, CheckCircle, XCircle, Loader2, LogIn } from 'lucide-react'
+import { LogOut, PlusCircle, X, User, Home as HomeIcon, CheckCircle, XCircle, Loader2 } from 'lucide-react' // LogIn removed from imports
+import { hasProfanity } from '@/lib/filter'
 
 export default function Home() {
   const [session, setSession] = useState(null)
@@ -37,6 +38,12 @@ export default function Home() {
       return
     }
     const checkAvailability = setTimeout(async () => {
+      // Immediate frontend check for profanity
+      if (hasProfanity(username)) {
+        setUsernameStatus('invalid')
+        return
+      }
+
       setUsernameStatus('checking')
       const { data } = await supabase.from('profiles').select('username').ilike('username', username).single()
       if (data) setUsernameStatus('invalid')
@@ -58,7 +65,14 @@ export default function Home() {
   const handleSignUp = async (e) => {
     e.preventDefault()
     if(!username) return alert("Please pick a username")
-    if(usernameStatus === 'invalid') return alert("Username already taken!")
+    
+    // PROFANITY CHECK
+    if (hasProfanity(username)) {
+      return alert("Username contains not allowed words. Please choose another.")
+    }
+
+    if(usernameStatus === 'invalid') return alert("Username already taken or invalid!")
+    
     setLoading(true)
     const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) alert(error.message)
@@ -93,21 +107,16 @@ export default function Home() {
       {/* NAVBAR */}
       <div className="w-full max-w-2xl p-4 flex justify-between items-center z-20 absolute top-0 bg-gradient-to-b from-black/90 to-transparent">
         
-        {/* Logo - Always goes to Feed */}
         <button onClick={() => setViewMode('feed')} className="hover:opacity-80 transition">
           <img src="/tgtbt_logo.png" alt="TGTBT" className="h-24 w-auto object-contain" />
         </button>
         
         <div className="flex items-center gap-6">
-          
-          {/* PROFILE / HOME TOGGLE BUTTON */}
           <button 
             onClick={() => requireAuth(() => {
               if (isMyProfile) {
-                // If I'm on my profile (House Icon), go to Feed
                 setViewMode('feed')
               } else {
-                // If I'm anywhere else, go to My Profile
                 setTargetProfileId(session.user.id)
                 setViewMode('profile')
               }
@@ -117,19 +126,21 @@ export default function Home() {
             {isMyProfile ? <HomeIcon size={28} /> : <User size={28} />}
           </button>
 
-          {/* Upload Button */}
           <button onClick={() => requireAuth(() => setShowUpload(true))} className="text-white hover:text-blue-400 transition transform hover:scale-110">
             <PlusCircle size={30} />
           </button>
           
-          {/* Sign Out / Log In Switch */}
           {session ? (
             <button onClick={() => supabase.auth.signOut()} className="text-gray-400 hover:text-white transition">
               <LogOut size={26} />
             </button>
           ) : (
-            <button onClick={() => { setIsSignUpMode(false); setShowAuth(true); }} className="text-blue-400 font-bold hover:text-white transition flex items-center gap-1">
-              Log In <LogIn size={20} />
+            // UPDATED: No Icon, just text
+            <button 
+              onClick={() => { setIsSignUpMode(false); setShowAuth(true); }} 
+              className="text-blue-400 font-bold hover:text-white transition"
+            >
+              Log In
             </button>
           )}
         </div>
@@ -173,7 +184,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* AUTH OVERLAY (Login/Signup) */}
+      {/* AUTH OVERLAY */}
       {showAuth && (
         <div className="absolute inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-200">
            <div className="w-full max-w-md space-y-6 rounded-2xl bg-gray-900 p-8 text-white shadow-2xl border border-gray-800 relative">
@@ -200,6 +211,9 @@ export default function Home() {
                       {usernameStatus === 'valid' && <CheckCircle className="text-green-500" />}
                       {usernameStatus === 'invalid' && <XCircle className="text-red-500" />}
                     </div>
+                    {usernameStatus === 'invalid' && hasProfanity(username) && (
+                      <p className="text-red-500 text-xs mt-1 ml-1">Username contains restricted words.</p>
+                    )}
                   </div>
                 )}
                 

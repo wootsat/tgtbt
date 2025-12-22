@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { X, Send, Loader2, User } from 'lucide-react'
+import { maskProfanity } from '@/lib/filter' // <--- IMPORTED
 
 export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isInsidePlayer, onCommentAdded }) {
   const [comments, setComments] = useState([])
@@ -41,14 +42,17 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
     setSubmitting(true)
     const { error } = await supabase
       .from('comments')
-      .insert({ user_id: user.id, video_id: videoId, text: newComment.trim() })
+      .insert({ 
+        user_id: user.id, 
+        video_id: videoId, 
+        text: maskProfanity(newComment.trim()) // <--- COMMENT MASKED HERE
+      })
 
     if (error) {
       alert('Failed to post comment')
     } else {
       setNewComment('')
       fetchComments()
-      // TRIGGER UPDATE IN PARENT
       if (onCommentAdded) onCommentAdded()
     }
     setSubmitting(false)
