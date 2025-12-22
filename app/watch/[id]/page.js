@@ -2,19 +2,18 @@ import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { Home, PlayCircle, AlertCircle } from 'lucide-react'
 
-// 1. Force the page to be dynamic (never cache)
+// Force the page to be dynamic so it always checks for the latest data
 export const dynamic = 'force-dynamic'
 
-// 2. Setup Supabase Client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 )
 
+// 1. FIX: await params for Metadata
 export async function generateMetadata({ params }) {
-  const { id } = params
+  const { id } = await params // <--- ADDED await
   
-  // Fetch video for metadata
   const { data: video } = await supabase.from('videos').select('*').eq('id', id).single()
 
   if (!video) {
@@ -40,10 +39,12 @@ export async function generateMetadata({ params }) {
   }
 }
 
-export default async function WatchPage({ params }) {
+// 2. FIX: await params for Main Page
+export default async function WatchPage(props) {
+  const params = await props.params // <--- ADDED await
   const { id } = params
 
-  console.log(`[WatchPage] Fetching ID: ${id}`) // Debug Log
+  console.log(`[WatchPage] Fetching ID: ${id}`) 
 
   const { data: video, error } = await supabase
     .from('videos')
@@ -51,7 +52,6 @@ export default async function WatchPage({ params }) {
     .eq('id', id)
     .single()
 
-  // DEBUGGING: Log errors to Vercel console
   if (error) {
     console.error(`[WatchPage] Supabase Error for ID ${id}:`, error.message)
   }
@@ -61,10 +61,7 @@ export default async function WatchPage({ params }) {
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-4 text-center">
         <AlertCircle size={48} className="text-red-500 mb-4" />
         <h1 className="text-2xl font-bold mb-2">Video Not Found</h1>
-        <p className="text-gray-400 mb-6">The ID "{id}" could not be found in the database.</p>
-        <p className="text-xs text-gray-600 font-mono mb-8">
-           Error Details: {error ? error.message : "No data returned"}
-        </p>
+        <p className="text-gray-400 mb-6">Could not load video ID: {id}</p>
         <Link href="/" className="bg-blue-600 px-6 py-3 rounded-full font-bold hover:bg-blue-500 transition">
           Go to Home Feed
         </Link>
