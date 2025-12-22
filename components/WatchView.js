@@ -9,13 +9,14 @@ export default function WatchView({ initialVideo }) {
   const router = useRouter()
   const [video, setVideo] = useState(initialVideo)
 
-  // 1. Re-use the Rating Logic from Feed.js
+  // Re-use the Rating Logic from Feed.js
   const handleRate = async (videoId, score) => {
     const { data: { user } } = await supabase.auth.getUser()
     
-    // If not logged in, we just alert (or you could redirect to login)
+    // If not logged in, prompt user (or redirect)
     if (!user) {
       alert("Please log in to rate videos!")
+      // Optional: router.push('/login')
       return 
     }
 
@@ -43,12 +44,12 @@ export default function WatchView({ initialVideo }) {
     }, 250) 
   }
 
-  // 2. Handle Closing (Go to Home Feed)
+  // Handle Closing (Go to Home Feed)
   const handleClose = () => {
     router.push('/')
   }
 
-  // 3. Handle User Click (Go to Home Feed for now)
+  // Handle User Click (Go to Home Feed for now, or profile if we have routing set up)
   const handleUserClick = () => {
     router.push('/')
   }
@@ -60,11 +61,13 @@ export default function WatchView({ initialVideo }) {
         videoSrc={video.compressed_url || video.video_url} 
         videoId={video.id}
         initialRating={video.average_rating}
-        // Safely access comment count
         initialCommentCount={video.comments?.[0]?.count || 0} 
         onRate={handleRate}
         onClose={handleClose} 
         onUserClick={handleUserClick}
+        
+        // SHARE SPECIFIC: Must start muted to bypass browser autoplay blocks
+        startMuted={true}
       />
     </div>
   )
