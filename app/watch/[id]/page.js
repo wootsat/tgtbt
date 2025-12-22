@@ -5,23 +5,17 @@ import { Home, PlayCircle, AlertCircle } from 'lucide-react'
 // Force dynamic rendering (no caching)
 export const dynamic = 'force-dynamic'
 
-// --- 1. SAFE CLIENT CREATION ---
-// We create the client inside a helper to avoid top-level crashes
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!url || !key) {
-    console.error("CRITICAL: Missing Supabase Environment Variables")
-    return null
-  }
+  if (!url || !key) return null
   return createClient(url, key)
 }
 
-// --- 2. SAFE METADATA GENERATION ---
+// --- 1. METADATA GENERATION ---
 export async function generateMetadata(props) {
   try {
-    const params = await props.params // Await params for Next.js 15
+    const params = await props.params
     const { id } = params
     
     const supabase = getSupabase()
@@ -31,20 +25,36 @@ export async function generateMetadata(props) {
 
     if (!video) return { title: 'Video Not Found - TGTBT' }
 
+    // Safety checks for strings
+    const safeTitle = video.title || 'Untitled TGTBT Video'
+    const safeDesc = `Watch ${safeTitle} on TGTBT`
+    const videoUrl = video.compressed_url || video.video_url
+    const pageUrl = `https://tgtbt.xyz/watch/${id}`
+
     return {
-      title: video.title,
-      description: `Watch ${video.title} on TGTBT`,
+      title: safeTitle,
+      description: safeDesc,
       openGraph: {
-        title: video.title,
-        url: `https://tgtbt.xyz/watch/${id}`,
-        videos: [{ url: video.compressed_url || video.video_url, width: 720, height: 1280, type: 'video/mp4' }],
+        title: safeTitle,
+        description: safeDesc,
+        url: pageUrl,
+        // OpenGraph uses 'url'
+        videos: [{ url: videoUrl, width: 720, height: 1280, type: 'video/mp4' }],
         images: ['https://tgtbt.xyz/tgtbt_logo.png'],
       },
       twitter: {
         card: 'player',
-        title: video.title,
+        title: safeTitle,
+        description: safeDesc,
         images: ['https://tgtbt.xyz/tgtbt_logo.png'],
-        players: [{ url: `https://tgtbt.xyz/watch/${id}`, width: 720, height: 1280 }],
+        players: [
+          {
+            // CRITICAL FIX: Next.js expects 'playerUrl', NOT 'url' here
+            playerUrl: pageUrl, 
+            width: 720,
+            height: 1280,
+          },
+        ],
       },
     }
   } catch (e) {
@@ -53,21 +63,18 @@ export async function generateMetadata(props) {
   }
 }
 
-// --- 3. MAIN PAGE COMPONENT ---
+// --- 2. MAIN PAGE COMPONENT ---
 export default async function WatchPage(props) {
   let id = 'unknown'
   let video = null
   let errorMsg = null
 
   try {
-    const params = await props.params // Await params for Next.js 15
+    const params = await props.params 
     id = params.id
 
     const supabase = getSupabase()
-    
-    if (!supabase) {
-      throw new Error("Missing Supabase URL or Key in Environment Variables")
-    }
+    if (!supabase) throw new Error("Missing Supabase URL or Key")
 
     const { data, error } = await supabase
       .from('videos')
@@ -83,17 +90,12 @@ export default async function WatchPage(props) {
     errorMsg = err.message
   }
 
-  // --- ERROR STATE UI ---
   if (errorMsg || !video) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-4 text-center">
         <AlertCircle size={48} className="text-red-500 mb-4" />
         <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
-        <div className="bg-gray-900 p-4 rounded-lg mb-6 border border-red-900/50 max-w-md overflow-hidden">
-           <p className="text-red-400 font-mono text-xs break-all">
-             {errorMsg || "Video not found in database"}
-           </p>
-        </div>
+        <p className="text-gray-400 mb-4 text-sm">{errorMsg || "Video not found"}</p>
         <Link href="/" className="bg-blue-600 px-6 py-3 rounded-full font-bold hover:bg-blue-500 transition">
           Return Home
         </Link>
@@ -101,7 +103,6 @@ export default async function WatchPage(props) {
     )
   }
 
-  // --- SUCCESS STATE UI ---
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white relative">
       <div className="absolute top-4 left-4 z-50">
