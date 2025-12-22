@@ -12,7 +12,7 @@ function getSupabase() {
   return createClient(url, key)
 }
 
-// --- 1. METADATA GENERATION ---
+// --- 1. METADATA GENERATION (Fixed) ---
 export async function generateMetadata(props) {
   try {
     const params = await props.params
@@ -25,11 +25,11 @@ export async function generateMetadata(props) {
 
     if (!video) return { title: 'Video Not Found - TGTBT' }
 
-    // Safety checks for strings
     const safeTitle = video.title || 'Untitled TGTBT Video'
     const safeDesc = `Watch ${safeTitle} on TGTBT`
     const videoUrl = video.compressed_url || video.video_url
     const pageUrl = `https://tgtbt.xyz/watch/${id}`
+    const imageUrl = 'https://tgtbt.xyz/tgtbt_logo.png'
 
     return {
       title: safeTitle,
@@ -38,24 +38,19 @@ export async function generateMetadata(props) {
         title: safeTitle,
         description: safeDesc,
         url: pageUrl,
-        // OpenGraph uses 'url'
         videos: [{ url: videoUrl, width: 720, height: 1280, type: 'video/mp4' }],
-        images: ['https://tgtbt.xyz/tgtbt_logo.png'],
+        images: [imageUrl],
       },
-      twitter: {
-        card: 'player',
-        title: safeTitle,
-        description: safeDesc,
-        images: ['https://tgtbt.xyz/tgtbt_logo.png'],
-        players: [
-          {
-            // CRITICAL FIX: Next.js expects 'playerUrl', NOT 'url' here
-            playerUrl: pageUrl, 
-            width: 720,
-            height: 1280,
-          },
-        ],
-      },
+      // FIX: We use 'other' to manually set tags and bypass the crashing Next.js helper
+      other: {
+        'twitter:card': 'player',
+        'twitter:title': safeTitle,
+        'twitter:description': safeDesc,
+        'twitter:image': imageUrl,
+        'twitter:player': pageUrl,
+        'twitter:player:width': '720',
+        'twitter:player:height': '1280',
+      }
     }
   } catch (e) {
     console.error("Metadata Error:", e)
