@@ -28,29 +28,44 @@ export default function VideoPlayer({
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // --- AUTOPLAY LOGIC (Looping & Robust) ---
+  // --- AUTOPLAY LOGIC (Simplified & Fixed) ---
   useEffect(() => {
-    const startVideo = async () => {
-      if (!videoRef.current) return
-
+    // 1. Force the video element to match the desired start state immediately
+    if (videoRef.current) {
       videoRef.current.muted = startMuted
       setIsMuted(startMuted)
+    }
+
+    const startVideo = async () => {
+      if (!videoRef.current) return
 
       try {
         await videoRef.current.play()
       } catch (err) {
-        console.log("Autoplay blocked. Retrying muted.")
-        if (videoRef.current) {
-          videoRef.current.muted = true
-          setIsMuted(true)
-          try {
-            await videoRef.current.play()
-          } catch (e) {
-            console.error("Autoplay failed completely", e)
+        // 2. Only run the "Force Mute" fallback if we EXPECTED it to be muted 
+        //    or if we strictly need it to play (like on a Share Link).
+        //    If startMuted is FALSE (App mode), we let the browser handle it 
+        //    so we don't accidentally mute it just because of a slight delay.
+        if (startMuted) {
+          console.log("Autoplay blocked. Retrying muted.")
+          if (videoRef.current) {
+            videoRef.current.muted = true
+            setIsMuted(true)
+            try {
+              await videoRef.current.play()
+            } catch (e) {
+              console.error("Autoplay failed completely", e)
+            }
           }
+        } else {
+          // In App mode (sound ON), just log the error but don't force mute.
+          // Usually, if this fails, it's because the click wasn't registered fast enough,
+          // but forcing mute is worse than the video stalling for a split second.
+          console.warn("Autoplay with sound failed:", err)
         }
       }
     }
+
     startVideo()
   }, [videoId, startMuted])
 
@@ -103,8 +118,7 @@ export default function VideoPlayer({
         loop
         playsInline
         autoPlay
-        muted={isMuted}
-        // Removed onClick here so the parent div handles the toggle
+        muted={isMuted} // React controls this based on prop
       />
 
       {/* 3. Watermark (Always visible, behind controls) */}
