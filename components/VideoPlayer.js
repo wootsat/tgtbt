@@ -13,7 +13,7 @@ export default function VideoPlayer({
   onClose, 
   onUserClick,
   startMuted = true,
-  showHomeButton = false // <--- New Prop: Defaults to hidden for normal Feed
+  showHomeButton = false 
 }) {
   const videoRef = useRef(null)
   
@@ -27,32 +27,16 @@ export default function VideoPlayer({
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // --- AUTOPLAY LOGIC ---
+  // --- SIMPLIFIED LOGIC ---
   useEffect(() => {
-    const startVideo = async () => {
-      if (!videoRef.current) return
-
+    // We strictly respect the startMuted prop.
+    // In Feed, startMuted is false -> Sound ON.
+    // In Share, startMuted is true -> Sound OFF (Muted).
+    if (videoRef.current) {
       videoRef.current.muted = startMuted
-      videoRef.current.volume = 1.0
       setIsMuted(startMuted)
-
-      try {
-        await videoRef.current.play()
-      } catch (err) {
-        // Fallback for browsers blocking audio
-        if (!startMuted && videoRef.current) {
-          videoRef.current.muted = true
-          setIsMuted(true)
-          try {
-            await videoRef.current.play()
-          } catch (e) {
-            // Video failed to play completely
-          }
-        }
-      }
     }
-    startVideo()
-  }, [videoId, startMuted])
+  }, [startMuted, videoId])
 
   const handleVideoClick = (e) => {
     e.stopPropagation()
@@ -86,22 +70,18 @@ export default function VideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
       
-      {/* --- HOME LOGO (Only if showHomeButton is true) --- */}
+      {/* --- HOME LOGO (For Share Page) --- */}
       {showHomeButton && (
         <Link 
           href="/"
           onClick={(e) => e.stopPropagation()} 
           className={`absolute top-4 left-4 z-50 transition-opacity duration-300 hover:scale-105 active:scale-95 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         >
-          <img 
-            src="/tgtbt_logo.png" 
-            alt="Home" 
-            className="h-12 w-auto drop-shadow-md" 
-          />
+          <img src="/tgtbt_logo.png" alt="Home" className="h-12 w-auto drop-shadow-md" />
         </Link>
       )}
 
-      {/* --- CLOSE BUTTON (Red X) --- */}
+      {/* --- CLOSE BUTTON --- */}
       <button 
         onClick={onClose} 
         className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
@@ -116,22 +96,23 @@ export default function VideoPlayer({
         className="max-h-full max-w-full w-auto h-auto object-contain"
         loop
         playsInline
+        // RESTORED: This is the key to instant playback
+        autoPlay 
         muted={isMuted} 
       />
 
-      {/* Watermark (Bottom Right) */}
+      {/* Watermark */}
       <img 
         src="/tgtbt_logo.png" 
         alt="TGTBT" 
         className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none"
       />
 
-      {/* --- CONTROLS OVERLAY --- */}
+      {/* --- CONTROLS --- */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
             
-            {/* Stars */}
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
@@ -141,15 +122,11 @@ export default function VideoPlayer({
                   onClick={(e) => { e.stopPropagation(); handleRate(star); }}
                   className="transition transform hover:scale-125 focus:outline-none"
                 >
-                  <Star 
-                    size={32} 
-                    className={star <= (hoverRating || userRating || rating) ? "text-yellow-400 fill-yellow-400 drop-shadow-lg" : "text-gray-500"} 
-                  />
+                  <Star size={32} className={star <= (hoverRating || userRating || rating) ? "text-yellow-400 fill-yellow-400 drop-shadow-lg" : "text-gray-500"} />
                 </button>
               ))}
             </div>
 
-            {/* Buttons */}
             <div className="flex items-center gap-6 mt-2">
               <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                 {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
@@ -171,7 +148,6 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Comments Modal */}
       {showComments && (
         <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <CommentsOverlay 
