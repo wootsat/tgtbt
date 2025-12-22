@@ -30,36 +30,17 @@ export default function VideoPlayer({
 
   // --- PLAYBACK LOGIC ---
   useEffect(() => {
-    const playVideo = async () => {
-      if (!videoRef.current) return
-
-      // 1. Force state to match props immediately
-      videoRef.current.muted = startMuted
-      videoRef.current.volume = 1.0 // Ensure volume is up
-      setIsMuted(startMuted)
-
-      // 2. Attempt to play via JavaScript (This works better for sound than HTML autoPlay)
-      try {
-        await videoRef.current.play()
-      } catch (err) {
-        console.warn("Playback failed:", err)
-        
-        // 3. Fallback: If it failed and we really need it to play (Share Link), mute it.
-        // We DO NOT do this for the App (startMuted=false) because we want to avoid 
-        // accidentally muting it if there's a slight millisecond delay.
-        if (startMuted && videoRef.current) {
-          videoRef.current.muted = true
-          setIsMuted(true)
-          try {
-            await videoRef.current.play()
-          } catch (e) {
-            // Video is truly blocked
-          }
-        }
-      }
+    // We only need special logic for the "Share Link" case (startMuted=true).
+    // For the "App" case (startMuted=false), we trust the 'autoPlay' attribute 
+    // because the user has already clicked.
+    if (startMuted && videoRef.current) {
+      videoRef.current.muted = true
+      videoRef.current.play().catch(err => {
+        console.log("Autoplay blocked, ensuring mute:", err)
+        videoRef.current.muted = true
+        videoRef.current.play().catch(e => console.error(e))
+      })
     }
-
-    playVideo()
   }, [startMuted, videoId])
 
   const handleVideoClick = (e) => {
@@ -114,13 +95,14 @@ export default function VideoPlayer({
       </button>
 
       {/* --- VIDEO --- */}
-      {/* Key Fix: REMOVED 'autoPlay'. We let the useEffect handle it. */}
+      {/* RESTORED: 'autoPlay' attribute matches the Profile behavior */}
       <video 
         ref={videoRef}
         src={videoSrc}
         className="max-h-full max-w-full w-auto h-auto object-contain"
         loop
         playsInline
+        autoPlay 
         muted={isMuted} 
       />
 
