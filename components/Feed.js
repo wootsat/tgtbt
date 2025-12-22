@@ -199,7 +199,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       {/* HEADER */}
       <div className="mb-6 text-center space-y-4">
         <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase animate-in fade-in slide-in-from-top-4 duration-500">
-          {currentTab === 'new' ? 'NEW TGTBTs' : currentTab === 'day' ? 'HOT FRESH' : 'TOP WEEKLY'}
+          {currentTab === 'new' ? 'NEWEST TGTBTs' : currentTab === 'day' ? 'HOT FRESH' : 'TOP WEEKLY'}
         </h2>
         
         <div className="flex justify-center items-center gap-3 text-[10px] font-bold tracking-widest">
@@ -212,7 +212,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
           </button>
           <span className="text-gray-700">|</span>
           <button onClick={() => handleTabChange('week')} className={`transition-all duration-300 flex items-center gap-1 ${currentTab === 'week' ? 'text-fuchsia-500 scale-110 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
-            WEEKLY <CalendarDays size={12} />
+            TOP WEEKLY <CalendarDays size={12} />
           </button>
         </div>
 
