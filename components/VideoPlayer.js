@@ -1,5 +1,6 @@
 'use client'
 import { useRef, useEffect, useState } from 'react'
+import Link from 'next/link' 
 import { X, Star, MessageCircle, Volume2, VolumeX, Share2 } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 
@@ -11,7 +12,8 @@ export default function VideoPlayer({
   onRate, 
   onClose, 
   onUserClick,
-  startMuted = true 
+  startMuted = true,
+  showHomeButton = false // <--- New Prop: Defaults to hidden for normal Feed
 }) {
   const videoRef = useRef(null)
   
@@ -30,19 +32,14 @@ export default function VideoPlayer({
     const startVideo = async () => {
       if (!videoRef.current) return
 
-      // 1. Explicitly set volume and mute state on the DOM element
       videoRef.current.muted = startMuted
       videoRef.current.volume = 1.0
       setIsMuted(startMuted)
 
       try {
-        // 2. Attempt to play
         await videoRef.current.play()
       } catch (err) {
-        console.log("Autoplay blocked/failed", err)
-        
-        // 3. Fallback: If unmuted play failed, try muting and playing again
-        // This ensures the video at least plays, even if the browser blocked audio
+        // Fallback for browsers blocking audio
         if (!startMuted && videoRef.current) {
           videoRef.current.muted = true
           setIsMuted(true)
@@ -54,7 +51,6 @@ export default function VideoPlayer({
         }
       }
     }
-
     startVideo()
   }, [videoId, startMuted])
 
@@ -90,33 +86,52 @@ export default function VideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
       
+      {/* --- HOME LOGO (Only if showHomeButton is true) --- */}
+      {showHomeButton && (
+        <Link 
+          href="/"
+          onClick={(e) => e.stopPropagation()} 
+          className={`absolute top-4 left-4 z-50 transition-opacity duration-300 hover:scale-105 active:scale-95 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        >
+          <img 
+            src="/tgtbt_logo.png" 
+            alt="Home" 
+            className="h-12 w-auto drop-shadow-md" 
+          />
+        </Link>
+      )}
+
+      {/* --- CLOSE BUTTON (Red X) --- */}
       <button 
         onClick={onClose} 
-        className={`absolute top-4 right-4 z-50 text-white/80 hover:text-white bg-black/40 rounded-full p-2 backdrop-blur-sm transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
       >
-        <X size={28} />
+        <X size={36} strokeWidth={3} />
       </button>
 
+      {/* --- VIDEO --- */}
       <video 
         ref={videoRef}
         src={videoSrc}
         className="max-h-full max-w-full w-auto h-auto object-contain"
         loop
         playsInline
-        // REMOVED 'autoPlay' attribute to prevent browser from forcing mute
         muted={isMuted} 
       />
 
+      {/* Watermark (Bottom Right) */}
       <img 
         src="/tgtbt_logo.png" 
         alt="TGTBT" 
         className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none"
       />
 
+      {/* --- CONTROLS OVERLAY --- */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
             
+            {/* Stars */}
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
@@ -134,6 +149,7 @@ export default function VideoPlayer({
               ))}
             </div>
 
+            {/* Buttons */}
             <div className="flex items-center gap-6 mt-2">
               <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                 {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
@@ -155,6 +171,7 @@ export default function VideoPlayer({
         </div>
       )}
 
+      {/* Comments Modal */}
       {showComments && (
         <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <CommentsOverlay 

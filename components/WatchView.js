@@ -9,14 +9,11 @@ export default function WatchView({ initialVideo }) {
   const router = useRouter()
   const [video, setVideo] = useState(initialVideo)
 
-  // Re-use the Rating Logic from Feed.js
   const handleRate = async (videoId, score) => {
     const { data: { user } } = await supabase.auth.getUser()
     
-    // If not logged in, prompt user (or redirect)
     if (!user) {
       alert("Please log in to rate videos!")
-      // Optional: router.push('/login')
       return 
     }
 
@@ -30,7 +27,6 @@ export default function WatchView({ initialVideo }) {
       return
     }
 
-    // Refresh the local video data to show new average
     setTimeout(async () => {
       const { data: updatedVideo } = await supabase
         .from('videos')
@@ -44,18 +40,15 @@ export default function WatchView({ initialVideo }) {
     }, 250) 
   }
 
-  // Handle Closing (Go to Home Feed)
   const handleClose = () => {
     router.push('/')
   }
 
-  // Handle User Click (Go to Home Feed for now, or profile if we have routing set up)
   const handleUserClick = () => {
     router.push('/')
   }
 
   return (
-    // We force the container to be full screen black, exactly like the feed modal
     <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
       <VideoPlayer 
         videoSrc={video.compressed_url || video.video_url} 
@@ -66,8 +59,10 @@ export default function WatchView({ initialVideo }) {
         onClose={handleClose} 
         onUserClick={handleUserClick}
         
-        // SHARE SPECIFIC: Must start muted to bypass browser autoplay blocks
+        // 1. Muted for autoplay on links
         startMuted={true}
+        // 2. SHOW LOGO (Because this is a standalone page)
+        showHomeButton={true} 
       />
     </div>
   )
