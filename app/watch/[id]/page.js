@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
-import { Home, PlayCircle, AlertCircle } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
+import WatchView from '@/components/WatchView' // Import the new client component
 
-// Force dynamic rendering (no caching)
 export const dynamic = 'force-dynamic'
 
 function getSupabase() {
@@ -12,7 +12,7 @@ function getSupabase() {
   return createClient(url, key)
 }
 
-// --- 1. METADATA GENERATION (Fixed) ---
+// --- 1. METADATA (Keep this for Twitter/X Cards) ---
 export async function generateMetadata(props) {
   try {
     const params = await props.params
@@ -41,7 +41,6 @@ export async function generateMetadata(props) {
         videos: [{ url: videoUrl, width: 720, height: 1280, type: 'video/mp4' }],
         images: [imageUrl],
       },
-      // FIX: We use 'other' to manually set tags and bypass the crashing Next.js helper
       other: {
         'twitter:card': 'player',
         'twitter:title': safeTitle,
@@ -53,27 +52,26 @@ export async function generateMetadata(props) {
       }
     }
   } catch (e) {
-    console.error("Metadata Error:", e)
     return { title: 'TGTBT' }
   }
 }
 
-// --- 2. MAIN PAGE COMPONENT ---
+// --- 2. MAIN PAGE ---
 export default async function WatchPage(props) {
-  let id = 'unknown'
   let video = null
   let errorMsg = null
 
   try {
     const params = await props.params 
-    id = params.id
-
+    const id = params.id
     const supabase = getSupabase()
-    if (!supabase) throw new Error("Missing Supabase URL or Key")
 
+    if (!supabase) throw new Error("Missing Supabase Config")
+
+    // We fetch comments count here too so the player has it ready
     const { data, error } = await supabase
       .from('videos')
-      .select('*, profiles(username)')
+      .select('*, profiles(username), comments(count)')
       .eq('id', id)
       .single()
       
@@ -81,7 +79,6 @@ export default async function WatchPage(props) {
     video = data
 
   } catch (err) {
-    console.error("Page Load Error:", err.message)
     errorMsg = err.message
   }
 
@@ -89,44 +86,15 @@ export default async function WatchPage(props) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-4 text-center">
         <AlertCircle size={48} className="text-red-500 mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
-        <p className="text-gray-400 mb-4 text-sm">{errorMsg || "Video not found"}</p>
+        <h1 className="text-2xl font-bold mb-2">Video Unavailable</h1>
+        <p className="text-gray-400 mb-6 text-sm">{errorMsg || "Could not load video."}</p>
         <Link href="/" className="bg-blue-600 px-6 py-3 rounded-full font-bold hover:bg-blue-500 transition">
-          Return Home
+          Go to Home Feed
         </Link>
       </div>
     )
   }
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white relative">
-      <div className="absolute top-4 left-4 z-50">
-        <Link href="/" className="flex items-center gap-2 bg-black/50 backdrop-blur-md px-4 py-2 rounded-full hover:bg-white/10 transition border border-white/10">
-          <Home size={20} /> <span className="font-bold">Home</span>
-        </Link>
-      </div>
-
-      <div className="w-full max-w-md aspect-[9/16] max-h-[85vh] relative bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-gray-800">
-        <video 
-          src={video.compressed_url || video.video_url} 
-          className="w-full h-full object-contain bg-black" 
-          controls 
-          autoPlay 
-          playsInline
-          loop
-        />
-        <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 to-transparent pointer-events-none">
-          <h1 className="text-xl font-bold text-white mb-1 drop-shadow-md">{video.title}</h1>
-          <p className="text-blue-400 font-bold text-sm drop-shadow-md">@{video.profiles?.username || 'Unknown'}</p>
-        </div>
-      </div>
-      
-      <div className="mt-8 flex flex-col items-center gap-3">
-        <p className="text-gray-400 text-sm">Want to see more?</p>
-        <Link href="/" className="bg-white text-black hover:bg-gray-200 font-black uppercase tracking-widest py-3 px-8 rounded-full transition flex items-center gap-2 transform hover:scale-105">
-           <PlayCircle size={20} /> Open App
-        </Link>
-      </div>
-    </div>
-  )
+  // Render the interactive Client Component
+  return <WatchView initialVideo={video} />
 }
