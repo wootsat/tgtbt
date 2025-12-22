@@ -24,18 +24,42 @@ export default function VideoPlayer({
   const [showControls, setShowControls] = useState(false)
   const [showComments, setShowComments] = useState(false) 
   
+  // Initialize state based on prop
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // --- SIMPLIFIED LOGIC ---
+  // --- PLAYBACK LOGIC ---
   useEffect(() => {
-    // We strictly respect the startMuted prop.
-    // In Feed, startMuted is false -> Sound ON.
-    // In Share, startMuted is true -> Sound OFF (Muted).
-    if (videoRef.current) {
+    const playVideo = async () => {
+      if (!videoRef.current) return
+
+      // 1. Force state to match props immediately
       videoRef.current.muted = startMuted
+      videoRef.current.volume = 1.0 // Ensure volume is up
       setIsMuted(startMuted)
+
+      // 2. Attempt to play via JavaScript (This works better for sound than HTML autoPlay)
+      try {
+        await videoRef.current.play()
+      } catch (err) {
+        console.warn("Playback failed:", err)
+        
+        // 3. Fallback: If it failed and we really need it to play (Share Link), mute it.
+        // We DO NOT do this for the App (startMuted=false) because we want to avoid 
+        // accidentally muting it if there's a slight millisecond delay.
+        if (startMuted && videoRef.current) {
+          videoRef.current.muted = true
+          setIsMuted(true)
+          try {
+            await videoRef.current.play()
+          } catch (e) {
+            // Video is truly blocked
+          }
+        }
+      }
     }
+
+    playVideo()
   }, [startMuted, videoId])
 
   const handleVideoClick = (e) => {
@@ -70,7 +94,7 @@ export default function VideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
       
-      {/* --- HOME LOGO (For Share Page) --- */}
+      {/* --- HOME LOGO (Only for Share Page) --- */}
       {showHomeButton && (
         <Link 
           href="/"
@@ -90,14 +114,13 @@ export default function VideoPlayer({
       </button>
 
       {/* --- VIDEO --- */}
+      {/* Key Fix: REMOVED 'autoPlay'. We let the useEffect handle it. */}
       <video 
         ref={videoRef}
         src={videoSrc}
         className="max-h-full max-w-full w-auto h-auto object-contain"
         loop
         playsInline
-        // RESTORED: This is the key to instant playback
-        autoPlay 
         muted={isMuted} 
       />
 
