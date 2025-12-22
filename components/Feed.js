@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, PlayCircle, User, Flame, CalendarDays, Sparkles, MessageCircle } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
@@ -18,26 +18,47 @@ export default function Feed({ onUserClick, onAuthRequired }) {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
 
-  // --- NEW: HANDLE BACK BUTTON FOR VIDEO PLAYER ---
+  // --- FIXED: ROBUST HISTORY HANDLING ---
+  const historyPushedRef = useRef(false)
+
   useEffect(() => {
     if (activeVideo) {
-      // 1. When video opens, push a state so "Back" has something to catch
-      window.history.pushState({ videoOpen: true }, '', window.location.href)
-
-      // 2. Define what happens when "Back" is pressed
-      const handlePopState = () => {
-        setActiveVideo(null) // Close the player
+      // 1. Only push if we haven't already for this session
+      if (!historyPushedRef.current) {
+        window.history.pushState(null, '', window.location.pathname)
+        historyPushedRef.current = true
       }
 
-      // 3. Listen for the event
+      // 2. Handle Browser Back Button
+      const handlePopState = () => {
+        // When back is pressed, we acknowledge the history pop
+        historyPushedRef.current = false 
+        setActiveVideo(null)
+      }
+
       window.addEventListener('popstate', handlePopState)
 
-      // 4. Cleanup
       return () => {
         window.removeEventListener('popstate', handlePopState)
+        // Note: We don't pop here manually; the user pop triggers this cleanup.
       }
+    } else {
+      // Reset ref when video is closed normally
+      historyPushedRef.current = false
     }
   }, [activeVideo])
+
+  // Helper to close video (triggered by 'X' button)
+  const closeVideo = () => {
+    if (historyPushedRef.current) {
+      // If we added a state, go back (triggers popstate -> closes video)
+      window.history.back()
+    } else {
+      // Fallback if history wasn't manipulated
+      setActiveVideo(null)
+    }
+  }
+  // ------------------------------------
 
   const handlers = useSwipeable({
     onSwipedLeft: () => {
@@ -138,9 +159,8 @@ export default function Feed({ onUserClick, onAuthRequired }) {
             initialRating={activeVideo.average_rating}
             initialCommentCount={getCommentCount(activeVideo)}
             onRate={handleRate}
-            // UPDATED: Closing via 'X' button now triggers 'back' 
-            // so it stays in sync with the history stack.
-            onClose={() => window.history.back()} 
+            // UPDATED: Use our robust closer function
+            onClose={closeVideo} 
           />
         </div>
       )}
