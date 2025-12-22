@@ -15,53 +15,42 @@ export default function VideoPlayer({
 }) {
   const videoRef = useRef(null)
   
-  // Rating State
   const [rating, setRating] = useState(initialRating || 0)
   const [userRating, setUserRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
   
-  // UI Visibility State (Default: Hidden)
   const [showControls, setShowControls] = useState(false)
   const [showComments, setShowComments] = useState(false) 
   
-  // Mute state
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // --- AUTOPLAY LOGIC (Simplified & Fixed) ---
+  // --- AUTOPLAY LOGIC ---
   useEffect(() => {
-    // 1. Force the video element to match the desired start state immediately
-    if (videoRef.current) {
-      videoRef.current.muted = startMuted
-      setIsMuted(startMuted)
-    }
-
     const startVideo = async () => {
       if (!videoRef.current) return
 
+      // 1. Explicitly set volume and mute state on the DOM element
+      videoRef.current.muted = startMuted
+      videoRef.current.volume = 1.0
+      setIsMuted(startMuted)
+
       try {
+        // 2. Attempt to play
         await videoRef.current.play()
       } catch (err) {
-        // 2. Only run the "Force Mute" fallback if we EXPECTED it to be muted 
-        //    or if we strictly need it to play (like on a Share Link).
-        //    If startMuted is FALSE (App mode), we let the browser handle it 
-        //    so we don't accidentally mute it just because of a slight delay.
-        if (startMuted) {
-          console.log("Autoplay blocked. Retrying muted.")
-          if (videoRef.current) {
-            videoRef.current.muted = true
-            setIsMuted(true)
-            try {
-              await videoRef.current.play()
-            } catch (e) {
-              console.error("Autoplay failed completely", e)
-            }
+        console.log("Autoplay blocked/failed", err)
+        
+        // 3. Fallback: If unmuted play failed, try muting and playing again
+        // This ensures the video at least plays, even if the browser blocked audio
+        if (!startMuted && videoRef.current) {
+          videoRef.current.muted = true
+          setIsMuted(true)
+          try {
+            await videoRef.current.play()
+          } catch (e) {
+            // Video failed to play completely
           }
-        } else {
-          // In App mode (sound ON), just log the error but don't force mute.
-          // Usually, if this fails, it's because the click wasn't registered fast enough,
-          // but forcing mute is worse than the video stalling for a split second.
-          console.warn("Autoplay with sound failed:", err)
         }
       }
     }
@@ -69,7 +58,6 @@ export default function VideoPlayer({
     startVideo()
   }, [videoId, startMuted])
 
-  // Toggle UI Visibility when tapping the video background
   const handleVideoClick = (e) => {
     e.stopPropagation()
     setShowControls(prev => !prev)
@@ -102,7 +90,6 @@ export default function VideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
       
-      {/* 1. Close Button (Toggles with Controls) */}
       <button 
         onClick={onClose} 
         className={`absolute top-4 right-4 z-50 text-white/80 hover:text-white bg-black/40 rounded-full p-2 backdrop-blur-sm transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
@@ -110,30 +97,26 @@ export default function VideoPlayer({
         <X size={28} />
       </button>
 
-      {/* 2. Main Video Element */}
       <video 
         ref={videoRef}
         src={videoSrc}
         className="max-h-full max-w-full w-auto h-auto object-contain"
         loop
         playsInline
-        autoPlay
-        muted={isMuted} // React controls this based on prop
+        // REMOVED 'autoPlay' attribute to prevent browser from forcing mute
+        muted={isMuted} 
       />
 
-      {/* 3. Watermark (Always visible, behind controls) */}
       <img 
         src="/tgtbt_logo.png" 
         alt="TGTBT" 
         className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none"
       />
 
-      {/* 4. Bottom Controls Overlay (Toggles with Controls) */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
             
-            {/* Star Ratings */}
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
@@ -151,7 +134,6 @@ export default function VideoPlayer({
               ))}
             </div>
 
-            {/* Bottom Action Buttons */}
             <div className="flex items-center gap-6 mt-2">
               <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                 {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
@@ -173,7 +155,6 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* 5. Comments Modal (Always visible when active) */}
       {showComments && (
         <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <CommentsOverlay 
