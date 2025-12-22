@@ -18,14 +18,19 @@ export default function Feed({ onUserClick, onAuthRequired }) {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
 
+  // UPDATED SWIPE LOGIC FOR WRAPAROUND
   const handlers = useSwipeable({
     onSwipedLeft: () => {
+      // Navigating Right ->
       if (currentTab === 'new') handleTabChange('day')
       else if (currentTab === 'day') handleTabChange('week')
+      else if (currentTab === 'week') handleTabChange('new') // Wrap to Start
     },
     onSwipedRight: () => {
+      // Navigating Left <-
       if (currentTab === 'week') handleTabChange('day')
       else if (currentTab === 'day') handleTabChange('new')
+      else if (currentTab === 'new') handleTabChange('week') // Wrap to End
     },
     trackMouse: true 
   })
@@ -138,6 +143,10 @@ export default function Feed({ onUserClick, onAuthRequired }) {
             WEEKLY <CalendarDays size={12} />
           </button>
         </div>
+
+        <p className="text-gray-500 text-[10px] uppercase tracking-widest animate-pulse md:hidden mt-2">
+           Swipe Left / Right to switch
+        </p>
       </div>
 
       {videos.length === 0 && !loading ? (
@@ -149,7 +158,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
               
               <div onClick={() => setActiveVideo(video)} className="cursor-pointer relative z-10 flex items-center gap-4">
                 
-                {/* RANK / ICON CIRCLE */}
                 <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-black text-xl shadow-lg ${
                   currentTab === 'new' ? 'bg-gray-800 text-green-400 border border-gray-700' :
                   index === 0 ? 'bg-yellow-400 text-black' : 
@@ -157,7 +165,6 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                   index === 2 ? 'bg-orange-400 text-black' : 
                   'bg-gray-700 text-white'
                 }`}>
-                  {/* If NEWEST, show Icon. If others, show Rank Number */}
                   {currentTab === 'new' ? <Sparkles size={20} /> : index + 1 + (page * BATCH_SIZE)}
                 </div>
 
