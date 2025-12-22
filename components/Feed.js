@@ -18,19 +18,37 @@ export default function Feed({ onUserClick, onAuthRequired }) {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
 
-  // UPDATED SWIPE LOGIC FOR WRAPAROUND
+  // --- NEW: HANDLE BACK BUTTON FOR VIDEO PLAYER ---
+  useEffect(() => {
+    if (activeVideo) {
+      // 1. When video opens, push a state so "Back" has something to catch
+      window.history.pushState({ videoOpen: true }, '', window.location.href)
+
+      // 2. Define what happens when "Back" is pressed
+      const handlePopState = () => {
+        setActiveVideo(null) // Close the player
+      }
+
+      // 3. Listen for the event
+      window.addEventListener('popstate', handlePopState)
+
+      // 4. Cleanup
+      return () => {
+        window.removeEventListener('popstate', handlePopState)
+      }
+    }
+  }, [activeVideo])
+
   const handlers = useSwipeable({
     onSwipedLeft: () => {
-      // Navigating Right ->
       if (currentTab === 'new') handleTabChange('day')
       else if (currentTab === 'day') handleTabChange('week')
-      else if (currentTab === 'week') handleTabChange('new') // Wrap to Start
+      else if (currentTab === 'week') handleTabChange('new') 
     },
     onSwipedRight: () => {
-      // Navigating Left <-
       if (currentTab === 'week') handleTabChange('day')
       else if (currentTab === 'day') handleTabChange('new')
-      else if (currentTab === 'new') handleTabChange('week') // Wrap to End
+      else if (currentTab === 'new') handleTabChange('week') 
     },
     trackMouse: true 
   })
@@ -120,7 +138,9 @@ export default function Feed({ onUserClick, onAuthRequired }) {
             initialRating={activeVideo.average_rating}
             initialCommentCount={getCommentCount(activeVideo)}
             onRate={handleRate}
-            onClose={() => setActiveVideo(null)}
+            // UPDATED: Closing via 'X' button now triggers 'back' 
+            // so it stays in sync with the history stack.
+            onClose={() => window.history.back()} 
           />
         </div>
       )}
