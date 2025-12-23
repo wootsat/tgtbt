@@ -140,6 +140,10 @@ export default function Home() {
                 session={session} 
                 targetUserId={targetProfileId} 
                 onBack={goHome} 
+                onUserClick={(id) => { 
+                  setTargetProfileId(id) 
+                  // We are already in 'profile' mode, but this forces a refresh if needed
+               }}
              />
            </div>
         )}
