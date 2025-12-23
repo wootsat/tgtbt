@@ -167,8 +167,20 @@ export default function VideoPlayer({
       )}
 
       {showComments && (
-        <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={(e) => e.stopPropagation()}>
-          <CommentsOverlay videoId={videoId} onClose={() => setShowComments(false)} isInsidePlayer={true} onCommentAdded={() => setCommentCount(prev => prev + 1)} onUserClick={onUserClick} />
+        <div 
+            className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" 
+            onClick={(e) => { 
+                e.stopPropagation(); // Don't click the video behind it
+                setShowComments(false); // Close the comments
+            }}
+        >
+          <CommentsOverlay 
+            videoId={videoId} 
+            onClose={() => setShowComments(false)} 
+            isInsidePlayer={true} 
+            onCommentAdded={() => setCommentCount(prev => prev + 1)} 
+            onUserClick={onUserClick} 
+          />
         </div>
       )}
     </div>

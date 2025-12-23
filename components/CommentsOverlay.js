@@ -65,7 +65,9 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}></div>
       )}
 
-      <div className={`relative w-full max-w-md bg-gray-900 border-gray-800 shadow-2xl flex flex-col overflow-hidden 
+      <div 
+        onClick={(e) => e.stopPropagation()} // STOP CLOSING WHEN CLICKING INSIDE BOX
+        className={`relative w-full max-w-md bg-gray-900 border-gray-800 shadow-2xl flex flex-col overflow-hidden 
         ${isInsidePlayer ? 'h-full bg-gray-900/90' : 'h-[80vh] sm:h-[600px] sm:rounded-2xl border'}`}
       >
         
@@ -88,7 +90,7 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
                   <User size={14} className="text-gray-300" />
                 </div>
                 <div className="bg-gray-800/80 rounded-2xl rounded-tl-none p-3 max-w-[85%]">
-                  {/* UPDATED: Username is now a clickable button */}
+                  {/* Username Button */}
                   <button 
                     onClick={(e) => {
                       e.stopPropagation()
