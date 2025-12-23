@@ -1,24 +1,61 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Upload, Music, Loader2, X } from 'lucide-react'
+import { Upload, Music, Loader2, AlertCircle } from 'lucide-react'
+
+// --- UPDATED CONFIGURATION ---
+const MAX_SIZE_MB = 100      // Increased to 100MB
+const MAX_DURATION_SEC = 180 // Increased to 3 minutes
+// -----------------------------
 
 export default function UploadVideo({ onUploadComplete }) {
   const [file, setFile] = useState(null)
-  const [audioFile, setAudioFile] = useState(null) // <--- New Audio State
+  const [audioFile, setAudioFile] = useState(null)
   const [title, setTitle] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [statusMsg, setStatusMsg] = useState('')
+
+  // Helper to check video duration
+  const checkVideoDuration = (file) => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.onloadedmetadata = () => {
+        window.URL.revokeObjectURL(video.src)
+        resolve(video.duration)
+      }
+      video.onerror = () => reject("Invalid video file")
+      video.src = window.URL.createObjectURL(file)
+    })
+  }
 
   const handleUpload = async (e) => {
     e.preventDefault()
+    setStatusMsg('')
     if (!file || !title) return alert("Please select a video and enter a title.")
 
+    // 1. CHECK FILE SIZE
+    const fileSizeMB = file.size / 1024 / 1024
+    if (fileSizeMB > MAX_SIZE_MB) {
+      return alert(`File too large! Max size is ${MAX_SIZE_MB}MB`)
+    }
+
     setUploading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return alert("You must be logged in.")
 
     try {
-      // 1. Upload Video
+      // 2. CHECK VIDEO DURATION
+      setStatusMsg("Checking video length...")
+      const duration = await checkVideoDuration(file)
+      
+      if (duration > MAX_DURATION_SEC) {
+        throw new Error(`Video is too long! Limit is ${MAX_DURATION_SEC} seconds. (Yours: ${Math.round(duration)}s)`)
+      }
+
+      // 3. UPLOAD VIDEO
+      setStatusMsg("Uploading video...")
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("You must be logged in.")
+
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}.${fileExt}`
       const filePath = `${user.id}/${fileName}`
@@ -33,15 +70,21 @@ export default function UploadVideo({ onUploadComplete }) {
         .from('videos')
         .getPublicUrl(filePath)
 
-      // 2. Upload Audio (Optional)
+      // 4. UPLOAD AUDIO (Optional)
       let finalAudioUrl = null
       if (audioFile) {
+        setStatusMsg("Uploading audio...")
+        // Check Audio Size
+        if ((audioFile.size / 1024 / 1024) > MAX_SIZE_MB) {
+           throw new Error("Audio file too large.")
+        }
+
         const audioExt = audioFile.name.split('.').pop()
         const audioName = `audio_${Date.now()}.${audioExt}`
         const audioPath = `${user.id}/${audioName}`
 
         const { error: audioError } = await supabase.storage
-          .from('videos') // We can reuse the same bucket
+          .from('videos')
           .upload(audioPath, audioFile)
 
         if (audioError) throw audioError
@@ -53,12 +96,13 @@ export default function UploadVideo({ onUploadComplete }) {
         finalAudioUrl = publicUrl
       }
 
-      // 3. Save to Database
+      // 5. SAVE TO DB
+      setStatusMsg("Finalizing...")
       const { error: dbError } = await supabase.from('videos').insert({
         user_id: user.id,
         title: title,
         video_url: videoUrl,
-        audio_url: finalAudioUrl, // <--- Save the audio URL
+        audio_url: finalAudioUrl,
         compressed_url: null 
       })
 
@@ -71,6 +115,7 @@ export default function UploadVideo({ onUploadComplete }) {
       alert(error.message)
     } finally {
       setUploading(false)
+      setStatusMsg('')
     }
   }
 
@@ -82,7 +127,7 @@ export default function UploadVideo({ onUploadComplete }) {
       
       <form onSubmit={handleUpload} className="space-y-4">
         
-        {/* Title Input */}
+        {/* Title */}
         <div>
           <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1">Title</label>
           <input 
@@ -94,9 +139,12 @@ export default function UploadVideo({ onUploadComplete }) {
           />
         </div>
 
-        {/* Video File Input */}
+        {/* Video Input */}
         <div>
-          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1">Video File</label>
+          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1 flex justify-between">
+            <span>Video File</span>
+            <span className="text-gray-500">Max {MAX_DURATION_SEC}s / {MAX_SIZE_MB}MB</span>
+          </label>
           <input 
             type="file" 
             accept="video/*"
@@ -105,7 +153,7 @@ export default function UploadVideo({ onUploadComplete }) {
           />
         </div>
 
-        {/* NEW: Audio File Input */}
+        {/* Audio Input */}
         <div>
           <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1 flex items-center gap-2">
             <Music size={14} /> Custom Audio (Optional)
@@ -127,14 +175,17 @@ export default function UploadVideo({ onUploadComplete }) {
                </button>
             )}
           </div>
-          <p className="text-[10px] text-gray-500 mt-1">
-            If uploaded, this audio will replace the video's original sound.
-          </p>
         </div>
+
+        {statusMsg && (
+          <div className="text-sm text-blue-400 animate-pulse flex items-center gap-2">
+             <Loader2 size={14} className="animate-spin" /> {statusMsg}
+          </div>
+        )}
 
         <button 
           disabled={uploading}
-          className="w-full bg-green-500 hover:bg-green-600 text-black font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mt-4"
+          className="w-full bg-green-500 hover:bg-green-600 text-black font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mt-4 disabled:opacity-50"
         >
           {uploading ? <Loader2 className="animate-spin" /> : 'Post Video'}
         </button>
