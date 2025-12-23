@@ -1,26 +1,25 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { ArrowLeft, Star, CalendarDays, Eye, Share2, PlayCircle, Loader2, X, Heart, Sparkles } from 'lucide-react'
+import { ArrowLeft, Star, CalendarDays, Eye, Share2, PlayCircle, Loader2, X, Heart, ArrowUpDown } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
 import CommentsOverlay from '@/components/CommentsOverlay'
 
 export default function UserProfile({ session, targetUserId, onBack, onUserClick }) {
   const [profile, setProfile] = useState(null)
   
-  // Lists
   const [videos, setVideos] = useState([])
   const [favUsers, setFavUsers] = useState([])
-  const [favVideos, setFavVideos] = useState([]) // <--- New List
+  const [favVideos, setFavVideos] = useState([]) 
 
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('videos') // 'videos', 'fav_users', 'fav_videos'
-  
-  // Follow State
+  const [activeTab, setActiveTab] = useState('videos') 
+  const [sortOption, setSortOption] = useState('newest') 
+  const [totalFavoritesReceived, setTotalFavoritesReceived] = useState(0) 
+
   const [isFavorited, setIsFavorited] = useState(false)
   const [followLoading, setFollowLoading] = useState(false)
   
-  // Modals
   const [activeVideo, setActiveVideo] = useState(null)
   const [commentVideoId, setCommentVideoId] = useState(null)
   const [ratingVideoId, setRatingVideoId] = useState(null)
@@ -40,34 +39,39 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       setProfile(profileData)
 
       // 2. User's Own Videos
+      // UPDATED: Added 'video_favorites(count)' to the selection
       const { data: videoData } = await supabase
         .from('videos')
-        .select('*, comments(count)')
+        .select('*, comments(count), video_favorites(count)') 
         .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
       setVideos(videoData || [])
 
-      // 3. User's Favorite USERS (Only needed if it's MY profile)
       if (isMyProfile) {
+        // A. Favorite USERS
         const { data: favUserData } = await supabase
           .from('user_favorites')
           .select('favorite_user_id, profiles!user_favorites_favorite_user_id_fkey(id, username)')
           .eq('user_id', targetUserId)
         setFavUsers(favUserData?.map(f => f.profiles) || [])
 
-        // 4. User's Favorite VIDEOS (Only needed if it's MY profile)
-        // We join 'video_favorites' with 'videos' to get the video details
+        // B. Favorite VIDEOS (TGTBTs)
+        // UPDATED: Added 'video_favorites(count)' here too
         const { data: favVideoData } = await supabase
           .from('video_favorites')
-          .select('video_id, videos!video_favorites_video_id_fkey(*, comments(count))')
+          .select('video_id, videos!video_favorites_video_id_fkey(*, comments(count), video_favorites(count))')
           .eq('user_id', targetUserId)
           .order('created_at', { ascending: false })
-          
-        // Flatten structure
         setFavVideos(favVideoData?.map(f => f.videos) || [])
+
+        // C. Total Favorites Stats
+        if (videoData && videoData.length > 0) {
+          const totalFavs = videoData.reduce((acc, curr) => acc + (curr.video_favorites?.[0]?.count || 0), 0)
+          setTotalFavoritesReceived(totalFavs)
+        }
       }
 
-      // 5. Am I following this user?
+      // Am I following?
       if (session && !isMyProfile) {
         const { data: amIFollowing } = await supabase
           .from('user_favorites')
@@ -98,47 +102,102 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     setFollowLoading(false)
   }
 
-  // Helper to render video card (reused for both lists)
-  const renderVideoList = (videoList, emptyMessage) => (
-    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      {videoList.map((video) => (
-        <div key={video.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex gap-4 hover:bg-gray-750 transition group cursor-pointer" onClick={() => setActiveVideo(video)}>
-          <div className="w-24 h-16 bg-black rounded-lg flex items-center justify-center shrink-0 border border-gray-700 relative overflow-hidden">
-             <video src={video.compressed_url || video.video_url} className="absolute inset-0 w-full h-full object-cover opacity-50" />
-             <PlayCircle className="relative z-10 text-white opacity-80" />
-          </div>
-          <div className="flex-1 min-w-0 flex flex-col justify-center">
-            <h3 className="font-bold text-white truncate pr-4">{video.title}</h3>
-            <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
-              <button onClick={(e) => { e.stopPropagation(); setRatingVideoId(video.id); }} className="flex items-center gap-1 text-yellow-400 hover:text-yellow-200 transition bg-white/5 px-2 py-0.5 rounded-full hover:bg-white/10">
-                <Star size={12} fill="currentColor" /> <span className="font-bold">{video.average_rating?.toFixed(1) || '0.0'}</span>
-              </button>
-              <span className="text-gray-600">|</span>
-              <span className="flex items-center gap-1"><Eye size={12} /> {video.view_count || 0}</span>
-              <span className="text-gray-600">|</span>
-              <span className="flex items-center gap-1"><CalendarDays size={12} /> {new Date(video.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-            </div>
-          </div>
-          {/* Share Button (Right) */}
-          <button onClick={async (e) => {
-            e.stopPropagation()
-            const shareUrl = `https://tgtbt.xyz/watch/${video.id}`
-            if(navigator.share) try{await navigator.share({title:'TGTBT',url:shareUrl})}catch(e){}
-            else{navigator.clipboard.writeText(shareUrl);alert('Link copied!')}
-          }} className="text-gray-500 hover:text-white p-2">
-            <Share2 size={18} />
-          </button>
-        </div>
-      ))}
-      {videoList.length === 0 && <div className="text-center text-gray-500 py-10">{emptyMessage}</div>}
-    </div>
-  )
+  const getSortedVideos = (list) => {
+    const listCopy = [...list]
+    switch (sortOption) {
+      case 'newest': return listCopy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      case 'oldest': return listCopy.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      case 'rating': return listCopy.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
+      case 'views':  return listCopy.sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
+      default: return listCopy
+    }
+  }
 
   const handleRate = async (videoId, score) => {
     if (!session) return alert("Please log in to rate.")
     setRatingVideoId(null)
     const { error } = await supabase.from('ratings').upsert({ user_id: session.user.id, video_id: videoId, score: score }, { onConflict: 'user_id, video_id' })
-    // In a real app we'd refresh the specific video in the list here
+  }
+
+  // --- RENDER LIST ---
+  const renderVideoList = (videoList, emptyMessage) => {
+    const sortedList = getSortedVideos(videoList)
+    
+    return (
+      <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {/* Sort Controls */}
+        {videoList.length > 0 && (
+          <div className="flex justify-end mb-2">
+            <div className="relative">
+              <select 
+                value={sortOption} 
+                onChange={(e) => setSortOption(e.target.value)}
+                className="appearance-none bg-gray-900 border border-gray-700 text-gray-300 text-xs font-bold rounded-lg py-1 pl-3 pr-8 focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="rating">Top Rated</option>
+                <option value="views">Most Viewed</option>
+              </select>
+              <ArrowUpDown size={12} className="absolute right-2 top-1.5 text-gray-500 pointer-events-none" />
+            </div>
+          </div>
+        )}
+
+        {sortedList.map((video) => {
+          // Calculate favorite count safely
+          const favCount = video.video_favorites?.[0]?.count || 0
+
+          return (
+            <div key={video.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex gap-4 hover:bg-gray-750 transition group cursor-pointer" onClick={() => setActiveVideo(video)}>
+              <div className="w-24 h-16 bg-black rounded-lg flex items-center justify-center shrink-0 border border-gray-700 relative overflow-hidden">
+                 <video src={video.compressed_url || video.video_url} className="absolute inset-0 w-full h-full object-cover opacity-50" />
+                 <PlayCircle className="relative z-10 text-white opacity-80" />
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <h3 className="font-bold text-white truncate pr-4">{video.title}</h3>
+                
+                <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
+                  {/* Rating */}
+                  <button onClick={(e) => { e.stopPropagation(); setRatingVideoId(video.id); }} className="flex items-center gap-1 text-yellow-400 hover:text-yellow-200 transition bg-white/5 px-2 py-0.5 rounded-full hover:bg-white/10">
+                    <Star size={12} fill="currentColor" /> <span className="font-bold">{video.average_rating?.toFixed(1) || '0.0'}</span>
+                  </button>
+                  <span className="text-gray-600">|</span>
+                  
+                  {/* Views */}
+                  <span className="flex items-center gap-1"><Eye size={12} /> {video.view_count || 0}</span>
+                  
+                  {/* NEW: Favorites Count (Only if > 0) */}
+                  {favCount > 0 && (
+                    <>
+                      <span className="text-gray-600">|</span>
+                      <span className="flex items-center gap-1 text-pink-400 font-bold">
+                        <Heart size={12} className="fill-current" /> {favCount}
+                      </span>
+                    </>
+                  )}
+
+                  <span className="text-gray-600">|</span>
+                  
+                  {/* Date */}
+                  <span className="flex items-center gap-1"><CalendarDays size={12} /> {new Date(video.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                </div>
+              </div>
+              
+              <button onClick={async (e) => {
+                e.stopPropagation()
+                const shareUrl = `https://tgtbt.xyz/watch/${video.id}`
+                if(navigator.share) try{await navigator.share({title:'TGTBT',url:shareUrl})}catch(e){}
+                else{navigator.clipboard.writeText(shareUrl);alert('Link copied!')}
+              }} className="text-gray-500 hover:text-white p-2">
+                <Share2 size={18} />
+              </button>
+            </div>
+          )
+        })}
+        {sortedList.length === 0 && <div className="text-center text-gray-500 py-10">{emptyMessage}</div>}
+      </div>
+    )
   }
 
   if (loading) return <div className="flex justify-center pt-20 text-white"><Loader2 className="animate-spin" /></div>
@@ -159,12 +218,24 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
           )}
         </div>
         <h1 className="text-2xl font-bold text-white">@{profile.username}</h1>
-        <p className="text-xs text-gray-500 mt-1">Joined {new Date(profile.created_at).toLocaleDateString()}</p>
+        
+        <div className="flex items-center gap-2 text-xs text-gray-500 mt-2">
+           <span>{videos.length} Videos</span>
+           <span>•</span>
+           <span>Joined {new Date(profile.created_at).toLocaleDateString()}</span>
+           
+           {isMyProfile && totalFavoritesReceived > 0 && (
+             <>
+               <span>•</span>
+               <span className="text-pink-400 font-bold flex items-center gap-1">
+                 {totalFavoritesReceived} <Heart size={10} className="fill-current" /> Received
+               </span>
+             </>
+           )}
+        </div>
 
-        {/* TABS (Hidden if not my profile) */}
+        {/* TABS */}
         <div className="flex items-center gap-4 mt-6 border-b border-gray-800 w-full justify-center pb-1 overflow-x-auto">
-          
-          {/* Tab 1: Videos (Always Visible) */}
           <button 
             onClick={() => setActiveTab('videos')}
             className={`pb-2 px-2 text-xs sm:text-sm font-bold transition border-b-2 whitespace-nowrap ${activeTab === 'videos' ? 'text-white border-blue-500' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
@@ -172,7 +243,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
             VIDEOS ({videos.length})
           </button>
           
-          {/* Private Tabs */}
           {isMyProfile && (
             <>
               <button 
@@ -181,7 +251,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
               >
                 FAVORITE USERS
               </button>
-
               <button 
                 onClick={() => setActiveTab('fav_videos')}
                 className={`pb-2 px-2 text-xs sm:text-sm font-bold transition border-b-2 whitespace-nowrap flex items-center gap-1 ${activeTab === 'fav_videos' ? 'text-white border-yellow-500' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
@@ -195,7 +264,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
 
       {/* CONTENT */}
       {activeTab === 'videos' && renderVideoList(videos, "No videos uploaded yet.")}
-      
       {activeTab === 'fav_videos' && isMyProfile && renderVideoList(favVideos, "You haven't favorited any videos yet.")}
 
       {activeTab === 'fav_users' && isMyProfile && (
