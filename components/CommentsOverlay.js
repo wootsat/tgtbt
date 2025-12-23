@@ -1,18 +1,18 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { X, Send, Loader2, User } from 'lucide-react'
-import { maskProfanity } from '@/lib/filter'
+import { X, Send, Loader2, Trash2 } from 'lucide-react'
 
-export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isInsidePlayer, onCommentAdded, onUserClick }) {
+export default function CommentsOverlay({ videoId, onClose, isInsidePlayer = false, onCommentAdded, onUserClick }) {
   const [comments, setComments] = useState([])
   const [newComment, setNewComment] = useState('')
   const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const bottomRef = useRef(null)
+  const [posting, setPosting] = useState(false)
+  const [session, setSession] = useState(null)
 
   useEffect(() => {
     fetchComments()
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
   }, [videoId])
 
   const fetchComments = async () => {
@@ -21,114 +21,130 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
       .from('comments')
       .select('*, profiles(username)')
       .eq('video_id', videoId)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
 
-    if (error) console.error(error)
-    else setComments(data || [])
+    if (!error) setComments(data)
     setLoading(false)
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
-  const handleSubmit = async (e) => {
+  const handlePost = async (e) => {
     e.preventDefault()
     if (!newComment.trim()) return
+    if (!session) return alert("Please log in to comment.")
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      if (onAuthRequired) onAuthRequired()
-      return
-    }
-
-    setSubmitting(true)
+    setPosting(true)
     const { error } = await supabase
       .from('comments')
-      .insert({ 
-        user_id: user.id, 
-        video_id: videoId, 
-        text: maskProfanity(newComment.trim()) 
+      .insert({
+        video_id: videoId,
+        user_id: session.user.id,
+        content: newComment.trim()
       })
 
     if (error) {
-      alert('Failed to post comment')
+      alert(error.message)
     } else {
       setNewComment('')
-      fetchComments()
-      if (onCommentAdded) onCommentAdded()
+      fetchComments() // Refresh list
+      if (onCommentAdded) onCommentAdded() // Update counter in parent
     }
-    setSubmitting(false)
+    setPosting(false)
   }
 
-  return (
-    <div className={`${isInsidePlayer ? 'w-full h-full' : 'fixed inset-0 z-[60]'} flex items-end sm:items-center justify-center animate-in fade-in duration-200`}>
+  const handleDelete = async (commentId) => {
+    if (!confirm("Delete this comment?")) return
+    const { error } = await supabase.from('comments').delete().eq('id', commentId)
+    if (!error) {
+      setComments(prev => prev.filter(c => c.id !== commentId))
+    }
+  }
+
+  // --- CONTENT RENDERER ---
+  const Content = () => (
+    <div className={`flex flex-col bg-gray-900 border-gray-800 shadow-2xl overflow-hidden ${isInsidePlayer ? 'h-[70%] sm:h-[500px] w-full sm:rounded-t-2xl sm:rounded-b-xl border-t' : 'h-[80vh] w-full max-w-md rounded-t-2xl border-t border-l border-r'}`}>
       
-      {!isInsidePlayer && (
-         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}></div>
-      )}
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900 z-10">
+        <h3 className="text-white font-bold">Comments ({comments.length})</h3>
+        <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <X size={24} />
+        </button>
+      </div>
 
-      <div className={`relative w-full max-w-md bg-gray-900 border-gray-800 shadow-2xl flex flex-col overflow-hidden 
-        ${isInsidePlayer ? 'h-full bg-gray-900/90' : 'h-[80vh] sm:h-[600px] sm:rounded-2xl border'}`}
-      >
+      {/* List */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {loading && <div className="flex justify-center"><Loader2 className="animate-spin text-blue-500" /></div>}
         
-        <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-transparent z-10">
-          <h3 className="text-white font-bold text-lg">Comments</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white bg-black/20 rounded-full p-1">
-            <X size={24} />
-          </button>
-        </div>
+        {!loading && comments.length === 0 && (
+          <div className="text-center text-gray-500 mt-10 text-sm">No comments yet. Be the first!</div>
+        )}
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {loading ? (
-            <div className="flex justify-center pt-10"><Loader2 className="animate-spin text-gray-500" /></div>
-          ) : comments.length === 0 ? (
-            <div className="text-center text-gray-500 mt-10 text-sm">No comments yet.</div>
-          ) : (
-            comments.map((comment) => (
-              <div key={comment.id} className="flex gap-3 animate-in slide-in-from-bottom-2">
-                <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
-                  <User size={14} className="text-gray-300" />
-                </div>
-                <div className="bg-gray-800/80 rounded-2xl rounded-tl-none p-3 max-w-[85%]">
-                  {/* UPDATED: Username is now a clickable button */}
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if(onUserClick) onUserClick(comment.user_id)
-                    }}
-                    className="text-xs text-blue-400 font-bold mb-1 hover:text-blue-300 hover:underline text-left block"
+        {comments.map((comment) => (
+          <div key={comment.id} className="flex gap-3">
+             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shrink-0">
+               {comment.profiles?.username?.[0]?.toUpperCase() || '?'}
+             </div>
+             <div className="flex-1">
+               <div className="flex justify-between items-start">
+                  <span 
+                    className="text-xs font-bold text-gray-400 hover:text-blue-400 cursor-pointer"
+                    onClick={() => { if(onUserClick) onUserClick(comment.user_id) }}
                   >
-                    {comment.profiles?.username || 'Unknown'}
-                  </button>
-                  
-                  <p className="text-sm text-gray-200 leading-relaxed break-words">
-                    {comment.text}
-                  </p>
-                  <p className="text-[10px] text-gray-500 mt-2 text-right">
-                    {new Date(comment.created_at).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-          <div ref={bottomRef}></div>
-        </div>
+                    @{comment.profiles?.username || 'Unknown'}
+                  </span>
+                  <span className="text-[10px] text-gray-600">
+                    {new Date(comment.created_at).toLocaleDateString()}
+                  </span>
+               </div>
+               <p className="text-sm text-white mt-1 break-words">{comment.content}</p>
+               
+               {/* Delete Button (If Owner) */}
+               {session?.user?.id === comment.user_id && (
+                 <button onClick={() => handleDelete(comment.id)} className="text-[10px] text-red-500 hover:text-red-400 mt-1 flex items-center gap-1">
+                   <Trash2 size={10} /> Delete
+                 </button>
+               )}
+             </div>
+          </div>
+        ))}
+      </div>
 
-        <form onSubmit={handleSubmit} className="p-3 bg-gray-800/50 border-t border-gray-700 flex gap-2 items-center backdrop-blur-md">
-          <input 
-            type="text" 
-            placeholder="Add a comment..." 
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            className="flex-1 bg-gray-900 text-white rounded-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button 
-            type="submit" 
-            disabled={submitting || !newComment.trim()}
-            className="p-3 bg-blue-600 rounded-full text-white disabled:opacity-50 hover:bg-blue-500 transition"
-          >
-            {submitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-          </button>
-        </form>
+      {/* Input */}
+      <form onSubmit={handlePost} className="p-4 border-t border-gray-800 bg-gray-900 flex gap-2">
+        <input 
+          type="text" 
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+          placeholder="Add a comment..." 
+          className="flex-1 bg-gray-800 text-white rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+        />
+        <button 
+          disabled={posting || !newComment.trim()} 
+          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-full p-2 transition"
+        >
+          {posting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+        </button>
+      </form>
+    </div>
+  )
 
+  // --- LAYOUT LOGIC ---
+
+  // If inside player, VideoPlayer.js handles the backdrop click logic (via the update we just made above).
+  // We just return the content.
+  if (isInsidePlayer) {
+    return <Content />
+  }
+
+  // If used in Feed/Profile (not inside player), WE provide the backdrop.
+  // Clicking the backdrop closes. Clicking the Content stops propagation.
+  return (
+    <div 
+      className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" 
+      onClick={onClose} // <--- CLICKING BACKDROP CLOSES
+    >
+      <div onClick={(e) => e.stopPropagation()} className="w-full sm:w-auto">
+         <Content />
       </div>
     </div>
   )
