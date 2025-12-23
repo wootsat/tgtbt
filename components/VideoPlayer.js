@@ -37,11 +37,11 @@ export default function VideoPlayer({
     const initPlayer = async () => {
       if (!videoId) return
 
-      // 1. Increment View Count (Server-side function)
+      // 1. Increment View Count
       const { error } = await supabase.rpc('increment_view_count', { video_id: videoId })
       if (error) console.error("Error incrementing view:", error)
 
-      // 2. Check if user has already favorited this video
+      // 2. Check Favorite Status
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data } = await supabase
@@ -58,17 +58,24 @@ export default function VideoPlayer({
 
   // --- HANDLERS ---
 
+  const handleShowComments = (e) => {
+    e.stopPropagation()
+    // KEY FIX: setTimeout pushes the state update to the end of the event loop.
+    // This ensures the "click" that opens the menu is dead and gone 
+    // before the "Click Outside" listener in CommentsOverlay attaches.
+    setTimeout(() => setShowControls(false), 0) // Optional: Hide controls when comments open
+    setTimeout(() => setShowComments(true), 0)
+  }
+
   const toggleFavorite = async (e) => {
     e.stopPropagation()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return alert("Login to favorite videos!")
 
     if (isFavorited) {
-      // Remove Favorite
       const { error } = await supabase.from('video_favorites').delete().match({ user_id: user.id, video_id: videoId })
       if (!error) setIsFavorited(false)
     } else {
-      // Add Favorite
       const { error } = await supabase.from('video_favorites').insert({ user_id: user.id, video_id: videoId })
       if (!error) setIsFavorited(true)
     }
@@ -88,8 +95,6 @@ export default function VideoPlayer({
     e.stopPropagation()
     const newState = !isMuted
     setIsMuted(newState)
-    
-    // Toggle the correct element based on what's playing
     if (audioSrc && audioRef.current) {
       audioRef.current.muted = newState
     } else if (videoRef.current) {
@@ -108,14 +113,12 @@ export default function VideoPlayer({
     }
   }
 
-  // Helper: If startMuted is true (Share Link), we render the 'muted' attribute.
-  // If false (App Feed), we leave it off so sound plays immediately.
   const shouldStartMuted = startMuted
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
       
-      {/* Home Button (Only shown on Share/Watch pages) */}
+      {/* Home Button */}
       {showHomeButton && (
         <Link 
           href="/" 
@@ -134,51 +137,33 @@ export default function VideoPlayer({
         <X size={36} strokeWidth={3} />
       </button>
 
-      {/* --- MEDIA RENDERING LOGIC --- */}
+      {/* --- MEDIA RENDERING --- */}
       {audioSrc ? (
-        // CASE A: Custom Audio Exists
-        // Video is purely visual (muted). Audio tag handles sound.
         <>
           <video 
-            ref={videoRef} 
-            src={videoSrc} 
-            className="max-h-full max-w-full w-auto h-auto object-contain" 
+            ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" 
             loop playsInline autoPlay muted 
           />
           <audio 
-            ref={audioRef} 
-            src={audioSrc} 
-            autoPlay loop 
-            muted={shouldStartMuted} 
+            ref={audioRef} src={audioSrc} autoPlay loop muted={shouldStartMuted} 
           />
         </>
       ) : (
-        // CASE B: Standard Video
-        // We use conditional rendering of the tag to force the browser behavior we want
         shouldStartMuted ? (
           <video 
-            ref={videoRef} 
-            src={videoSrc} 
-            className="max-h-full max-w-full w-auto h-auto object-contain" 
+            ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" 
             loop playsInline autoPlay muted 
           />
         ) : (
           <video 
-            ref={videoRef} 
-            src={videoSrc} 
-            className="max-h-full max-w-full w-auto h-auto object-contain" 
+            ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" 
             loop playsInline autoPlay 
-            // No 'muted' attribute here = Instant Sound on Click
           />
         )
       )}
 
       {/* Watermark */}
-      <img 
-        src="/tgtbt_logo.png" 
-        alt="TGTBT" 
-        className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none" 
-      />
+      <img src="/tgtbt_logo.png" alt="TGTBT" className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none" />
 
       {/* --- CONTROLS OVERLAY --- */}
       {!showComments && (
@@ -207,13 +192,12 @@ export default function VideoPlayer({
               </button>
 
               <button 
-                onClick={(e) => { e.stopPropagation(); setShowComments(true); }} 
+                onClick={handleShowComments} 
                 className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full backdrop-blur-md border border-white/10 transition"
               >
                 <MessageCircle size={20} /> <span className="text-sm font-bold">Comments ({commentCount})</span>
               </button>
 
-              {/* Favorite Button */}
               <button 
                 onClick={toggleFavorite} 
                 className={`transition transform hover:scale-110 ${isFavorited ? 'text-pink-500 fill-pink-500' : 'text-white/80 hover:text-white'}`}
@@ -232,11 +216,13 @@ export default function VideoPlayer({
       {/* --- COMMENTS MODAL --- */}
       {showComments && (
         <div 
-          className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" 
+          className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center"
+          // We handle close here just in case the stopPropagation below fails, 
+          // but the primary logic is now in CommentsOverlay.
           onClick={(e) => { e.stopPropagation(); setShowComments(false); }}
         >
-          {/* Prevent clicks inside the modal from closing it */}
-          <div className="w-full h-full sm:h-auto sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+          {/* Wrapper to center and constrain width */}
+          <div className="w-full h-full sm:h-auto sm:max-w-md">
             <CommentsOverlay 
               videoId={videoId} 
               onClose={() => setShowComments(false)} 

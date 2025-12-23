@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { X, Send, Loader2, Trash2 } from 'lucide-react'
 
@@ -9,11 +9,33 @@ export default function CommentsOverlay({ videoId, onClose, isInsidePlayer = fal
   const [loading, setLoading] = useState(true)
   const [posting, setPosting] = useState(false)
   const [session, setSession] = useState(null)
+  
+  // 1. Add Ref to track the box
+  const overlayRef = useRef(null)
 
   useEffect(() => {
     fetchComments()
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
   }, [videoId])
+
+  // 2. Add the Click Outside Listener (Restores the "Close on click away" feature)
+  useEffect(() => {
+    // Only needed if we are inside the player (Feed mode has its own backdrop)
+    if (!isInsidePlayer) return;
+
+    const handleClickOutside = (event) => {
+      // If clicking inside the comment box, ignore
+      if (overlayRef.current && overlayRef.current.contains(event.target)) {
+        return;
+      }
+      // If clicking outside, close
+      onClose();
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isInsidePlayer, onClose]);
+
 
   const fetchComments = async () => {
     setLoading(true)
@@ -45,8 +67,8 @@ export default function CommentsOverlay({ videoId, onClose, isInsidePlayer = fal
       alert(error.message)
     } else {
       setNewComment('')
-      fetchComments() // Refresh list
-      if (onCommentAdded) onCommentAdded() // Update counter in parent
+      fetchComments()
+      if (onCommentAdded) onCommentAdded()
     }
     setPosting(false)
   }
@@ -61,7 +83,11 @@ export default function CommentsOverlay({ videoId, onClose, isInsidePlayer = fal
 
   // --- CONTENT RENDERER ---
   const Content = () => (
-    <div className={`flex flex-col bg-gray-900 border-gray-800 shadow-2xl overflow-hidden ${isInsidePlayer ? 'h-[70%] sm:h-[500px] w-full sm:rounded-t-2xl sm:rounded-b-xl border-t' : 'h-[80vh] w-full max-w-md rounded-t-2xl border-t border-l border-r'}`}>
+    <div 
+      ref={overlayRef} // 3. Attach Ref here so we know where the box is
+      onClick={(e) => e.stopPropagation()} // 4. STOP propagation (Prevents parent from closing this immediately)
+      className={`flex flex-col bg-gray-900 border-gray-800 shadow-2xl overflow-hidden ${isInsidePlayer ? 'h-[70%] sm:h-[500px] w-full sm:rounded-t-2xl sm:rounded-b-xl border-t' : 'h-[80vh] w-full max-w-md rounded-t-2xl border-t border-l border-r'}`}
+    >
       
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900 z-10">
@@ -98,7 +124,6 @@ export default function CommentsOverlay({ videoId, onClose, isInsidePlayer = fal
                </div>
                <p className="text-sm text-white mt-1 break-words">{comment.content}</p>
                
-               {/* Delete Button (If Owner) */}
                {session?.user?.id === comment.user_id && (
                  <button onClick={() => handleDelete(comment.id)} className="text-[10px] text-red-500 hover:text-red-400 mt-1 flex items-center gap-1">
                    <Trash2 size={10} /> Delete
@@ -128,20 +153,15 @@ export default function CommentsOverlay({ videoId, onClose, isInsidePlayer = fal
     </div>
   )
 
-  // --- LAYOUT LOGIC ---
-
-  // If inside player, VideoPlayer.js handles the backdrop click logic (via the update we just made above).
-  // We just return the content.
   if (isInsidePlayer) {
     return <Content />
   }
 
-  // If used in Feed/Profile (not inside player), WE provide the backdrop.
-  // Clicking the backdrop closes. Clicking the Content stops propagation.
+  // Feed/Profile Mode (Backdrop)
   return (
     <div 
       className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" 
-      onClick={onClose} // <--- CLICKING BACKDROP CLOSES
+      onClick={onClose} 
     >
       <div onClick={(e) => e.stopPropagation()} className="w-full sm:w-auto">
          <Content />
