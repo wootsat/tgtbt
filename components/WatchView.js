@@ -53,6 +53,7 @@ export default function WatchView({ initialVideo }) {
       <VideoPlayer 
         videoSrc={video.compressed_url || video.video_url} 
         videoId={video.id}
+        audioSrc={video.audio_url}
         initialRating={video.average_rating}
         initialCommentCount={video.comments?.[0]?.count || 0} 
         onRate={handleRate}

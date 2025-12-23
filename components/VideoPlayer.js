@@ -1,13 +1,15 @@
 'use client'
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link' 
-import { supabase } from '@/lib/supabaseClient' // <--- 1. Import Supabase
+import { supabase } from '@/lib/supabaseClient' 
 import { X, Star, MessageCircle, Volume2, VolumeX, Share2 } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 
 export default function VideoPlayer({ 
   videoSrc, 
   videoId, 
+  // We need to make sure we accept this new prop from the Feed/Page
+  audioSrc = null, 
   initialRating, 
   initialCommentCount = 0, 
   onRate, 
@@ -17,6 +19,7 @@ export default function VideoPlayer({
   showHomeButton = false 
 }) {
   const videoRef = useRef(null)
+  const audioRef = useRef(null) // <--- New Ref for separate audio
   
   const [rating, setRating] = useState(initialRating || 0)
   const [userRating, setUserRating] = useState(0)
@@ -26,23 +29,15 @@ export default function VideoPlayer({
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // --- 2. VIEW COUNT INCREMENT LOGIC ---
+  // View Count Logic
   useEffect(() => {
     const incrementView = async () => {
       if (!videoId) return
-      
-      // We use RPC (Remote Procedure Call) to call the SQL function we just made
-      const { error } = await supabase.rpc('increment_view_count', { 
-        video_id: videoId 
-      })
-
+      const { error } = await supabase.rpc('increment_view_count', { video_id: videoId })
       if (error) console.error("Error incrementing view:", error)
     }
-
-    // Call it once on mount
     incrementView()
   }, [videoId])
-  // -------------------------------------
 
   const handleVideoClick = (e) => {
     e.stopPropagation()
@@ -54,12 +49,20 @@ export default function VideoPlayer({
     onRate(videoId, score)
   }
 
+  // --- UPDATED MUTE TOGGLE ---
   const toggleMute = (e) => {
     e.stopPropagation()
-    if (!videoRef.current) return
-    const newState = !videoRef.current.muted
-    videoRef.current.muted = newState
+    const newState = !isMuted
     setIsMuted(newState)
+
+    // If we have custom audio, we toggle the AUDIO element
+    if (audioSrc && audioRef.current) {
+      audioRef.current.muted = newState
+    } 
+    // Otherwise we toggle the VIDEO element
+    else if (videoRef.current) {
+      videoRef.current.muted = newState
+    }
   }
 
   const handleShare = async (e) => {
@@ -73,6 +76,10 @@ export default function VideoPlayer({
       alert('Link copied!')
     }
   }
+
+  // Helper to determine if we should render muted based on prop + state
+  // If startMuted is false (Feed), we want sound immediately.
+  const shouldStartMuted = startMuted
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
@@ -94,25 +101,55 @@ export default function VideoPlayer({
         <X size={36} strokeWidth={3} />
       </button>
 
-      {startMuted ? (
-        <video 
-          ref={videoRef}
-          src={videoSrc}
-          className="max-h-full max-w-full w-auto h-auto object-contain"
-          loop
-          playsInline
-          autoPlay
-          muted 
-        />
+      {/* --- VIDEO RENDERING LOGIC --- */}
+      
+      {audioSrc ? (
+        // CASE A: Custom Audio Exists
+        // Video is ALWAYS muted (visuals only)
+        // Audio handles the sound
+        <>
+          <video 
+            ref={videoRef}
+            src={videoSrc}
+            className="max-h-full max-w-full w-auto h-auto object-contain"
+            loop
+            playsInline
+            autoPlay
+            muted // Always muted because audio tag handles sound
+          />
+          <audio
+            ref={audioRef}
+            src={audioSrc}
+            autoPlay
+            loop
+            // If Feed (startMuted=false) -> muted={false} (Sound ON)
+            // If Share (startMuted=true) -> muted={true} (Sound OFF)
+            muted={shouldStartMuted} 
+          />
+        </>
       ) : (
-        <video 
-          ref={videoRef}
-          src={videoSrc}
-          className="max-h-full max-w-full w-auto h-auto object-contain"
-          loop
-          playsInline
-          autoPlay 
-        />
+        // CASE B: Standard Video (No custom audio)
+        // Video handles both visuals and sound
+        startMuted ? (
+          <video 
+            ref={videoRef}
+            src={videoSrc}
+            className="max-h-full max-w-full w-auto h-auto object-contain"
+            loop
+            playsInline
+            autoPlay
+            muted 
+          />
+        ) : (
+          <video 
+            ref={videoRef}
+            src={videoSrc}
+            className="max-h-full max-w-full w-auto h-auto object-contain"
+            loop
+            playsInline
+            autoPlay 
+          />
+        )
       )}
 
       <img 

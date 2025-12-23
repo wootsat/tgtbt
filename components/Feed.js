@@ -195,6 +195,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
           <VideoPlayer 
             videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
             videoId={activeVideo.id}
+            audioSrc={video.audio_url}
             initialRating={activeVideo.average_rating}
             initialCommentCount={getCommentCount(activeVideo)}
             onRate={handleRate}

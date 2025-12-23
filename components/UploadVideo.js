@@ -1,123 +1,144 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Upload, Loader2, Video } from 'lucide-react'
-import { maskProfanity } from '@/lib/filter' // <--- IMPORTED
+import { Upload, Music, Loader2, X } from 'lucide-react'
 
 export default function UploadVideo({ onUploadComplete }) {
   const [file, setFile] = useState(null)
+  const [audioFile, setAudioFile] = useState(null) // <--- New Audio State
   const [title, setTitle] = useState('')
   const [uploading, setUploading] = useState(false)
 
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0])
-    }
-  }
+  const handleUpload = async (e) => {
+    e.preventDefault()
+    if (!file || !title) return alert("Please select a video and enter a title.")
 
-  const handleUpload = async () => {
-    if (!file || !title) return alert("Please select a video and add a title.")
     setUploading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return alert("You must be logged in.")
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("You must be logged in.")
-
-      // 1. Upload File
+      // 1. Upload Video
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}.${fileExt}`
       const filePath = `${user.id}/${fileName}`
-
+      
       const { error: uploadError } = await supabase.storage
         .from('videos')
         .upload(filePath, file)
 
       if (uploadError) throw uploadError
-
-      // 2. Get Public URL
-      const { data: { publicUrl } } = supabase.storage
+      
+      const { data: { publicUrl: videoUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(filePath)
 
-      // 3. Save to Database with PROFANITY MASK
-      const { error: dbError } = await supabase
-        .from('videos')
-        .insert({
-          user_id: user.id,
-          title: maskProfanity(title), // <--- TITLE MASKED HERE
-          video_url: publicUrl,
-        })
+      // 2. Upload Audio (Optional)
+      let finalAudioUrl = null
+      if (audioFile) {
+        const audioExt = audioFile.name.split('.').pop()
+        const audioName = `audio_${Date.now()}.${audioExt}`
+        const audioPath = `${user.id}/${audioName}`
+
+        const { error: audioError } = await supabase.storage
+          .from('videos') // We can reuse the same bucket
+          .upload(audioPath, audioFile)
+
+        if (audioError) throw audioError
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('videos')
+          .getPublicUrl(audioPath)
+        
+        finalAudioUrl = publicUrl
+      }
+
+      // 3. Save to Database
+      const { error: dbError } = await supabase.from('videos').insert({
+        user_id: user.id,
+        title: title,
+        video_url: videoUrl,
+        audio_url: finalAudioUrl, // <--- Save the audio URL
+        compressed_url: null 
+      })
 
       if (dbError) throw dbError
 
-      alert("Upload successful!")
-      setTitle('')
-      setFile(null)
-      if (onUploadComplete) onUploadComplete()
-
+      alert('Upload successful!')
+      onUploadComplete()
+      
     } catch (error) {
-      console.error(error)
-      alert("Error uploading: " + error.message)
+      alert(error.message)
     } finally {
       setUploading(false)
     }
   }
 
   return (
-    <div className="bg-gray-900 p-8 rounded-2xl shadow-xl border border-gray-800">
-      <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-        <Upload className="text-blue-500" /> Upload Video
+    <div className="w-full bg-gray-900 p-6 rounded-xl border border-gray-800 shadow-2xl">
+      <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+        <Upload size={24} /> Upload Video
       </h2>
-
-      <div className="space-y-4">
+      
+      <form onSubmit={handleUpload} className="space-y-4">
+        
         {/* Title Input */}
         <div>
-          <label className="block text-gray-400 text-sm font-bold mb-2">Title</label>
-          <input
-            type="text"
-            className="w-full bg-gray-800 text-white rounded-lg p-3 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Give it a catchy name..."
+          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1">Title</label>
+          <input 
+            type="text" 
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            className="w-full bg-gray-800 text-white p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="Give it a catchy title..."
           />
         </div>
 
-        {/* File Input */}
-        <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer relative">
+        {/* Video File Input */}
+        <div>
+          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1">Video File</label>
           <input 
             type="file" 
-            accept="video/*" 
-            onChange={handleFileChange} 
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            accept="video/*"
+            onChange={(e) => setFile(e.target.files[0])}
+            className="w-full text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
           />
-          {file ? (
-            <div className="text-green-400 flex flex-col items-center">
-              <Video size={32} className="mb-2" />
-              <span className="font-bold">{file.name}</span>
-            </div>
-          ) : (
-            <div className="text-gray-500 flex flex-col items-center">
-              <Upload size={32} className="mb-2" />
-              <span>Click to select video</span>
-            </div>
-          )}
         </div>
 
-        {/* Submit Button */}
-        <button
-          onClick={handleUpload}
-          disabled={uploading || !file || !title}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+        {/* NEW: Audio File Input */}
+        <div>
+          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1 flex items-center gap-2">
+            <Music size={14} /> Custom Audio (Optional)
+          </label>
+          <div className="relative">
+             <input 
+              type="file" 
+              accept="audio/*"
+              onChange={(e) => setAudioFile(e.target.files[0])}
+              className="w-full text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-pink-600 file:text-white hover:file:bg-pink-700 cursor-pointer"
+            />
+            {audioFile && (
+               <button 
+                 type="button" 
+                 onClick={() => setAudioFile(null)} 
+                 className="absolute right-0 top-2 text-red-500 hover:text-white text-xs"
+                >
+                 Remove Audio
+               </button>
+            )}
+          </div>
+          <p className="text-[10px] text-gray-500 mt-1">
+            If uploaded, this audio will replace the video's original sound.
+          </p>
+        </div>
+
+        <button 
+          disabled={uploading}
+          className="w-full bg-green-500 hover:bg-green-600 text-black font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mt-4"
         >
-          {uploading ? (
-            <>
-              <Loader2 className="animate-spin" /> Uploading...
-            </>
-          ) : (
-            "Post Video"
-          )}
+          {uploading ? <Loader2 className="animate-spin" /> : 'Post Video'}
         </button>
-      </div>
+      </form>
     </div>
   )
 }
