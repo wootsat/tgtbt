@@ -1,178 +1,208 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Star, Loader2, Play, Trophy, Calendar } from 'lucide-react'
+import { ArrowLeft, Star, CalendarDays, Eye, Share2, PlayCircle, Loader2, X } from 'lucide-react'
+import VideoPlayer from '@/components/VideoPlayer'
+import CommentsOverlay from '@/components/CommentsOverlay'
 
 export default function UserProfile({ session, targetUserId, onBack }) {
+  const [profile, setProfile] = useState(null)
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
-  const [playingVideoId, setPlayingVideoId] = useState(null)
-  const [profileData, setProfileData] = useState({ username: '', joinedAt: null })
-  const [sortBy, setSortBy] = useState('date') 
-
-  const profileId = targetUserId || session?.user?.id
-  const isOwnProfile = session?.user?.id === profileId
+  
+  // States for Modals
+  const [activeVideo, setActiveVideo] = useState(null)
+  const [commentVideoId, setCommentVideoId] = useState(null)
+  const [ratingVideoId, setRatingVideoId] = useState(null) // <--- New State for Rating Modal
 
   useEffect(() => {
-    async function fetchData() {
-      if (!profileId) return
-      setLoading(true)
+    fetchProfileData()
+  }, [targetUserId])
 
-      // 1. Get Profile Info (Username + Join Date)
-      const { data: profile } = await supabase
+  const fetchProfileData = async () => {
+    try {
+      setLoading(true)
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('username, created_at')
-        .eq('id', profileId)
+        .select('*')
+        .eq('id', targetUserId)
         .single()
       
-      if (profile) {
-        setProfileData({ 
-          username: profile.username,
-          joinedAt: new Date(profile.created_at)
-        })
-      }
+      if (profileError) throw profileError
+      setProfile(profileData)
 
-      // 2. Get Videos
-      let query = supabase.from('videos').select('*').eq('user_id', profileId)
+      const { data: videoData, error: videoError } = await supabase
+        .from('videos')
+        .select('*, comments(count)')
+        .eq('user_id', targetUserId)
+        .order('created_at', { ascending: false })
 
-      if (sortBy === 'rank') {
-        query = query.order('average_rating', { ascending: false })
-      } else {
-        query = query.order('created_at', { ascending: false })
-      }
+      if (videoError) throw videoError
+      setVideos(videoData || [])
 
-      const { data: videoData, error } = await query
-      
-      if (error) console.error('Error:', error)
-      else setVideos(videoData || [])
-      
+    } catch (error) {
+      console.error("Error fetching profile:", error)
+    } finally {
       setLoading(false)
     }
-
-    fetchData()
-  }, [profileId, sortBy])
-
-  const activeVideo = videos.find(v => v.id === playingVideoId)
-
-  // Helper to format date: "September 7th, 2025"
-  const formatDate = (date) => {
-    if (!date) return ''
-    return new Intl.DateTimeFormat('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    }).format(date)
   }
 
+  const handleShare = async (e, videoId) => {
+    e.stopPropagation()
+    const shareUrl = `https://tgtbt.xyz/watch/${videoId}`
+    if (navigator.share) {
+      try { await navigator.share({ title: 'TGTBT', url: shareUrl }) } catch (err) {}
+    } else {
+      navigator.clipboard.writeText(shareUrl)
+      alert('Link copied!')
+    }
+  }
+
+  const handleRate = async (videoId, score) => {
+    if (!session) return alert("Please log in to rate.")
+    
+    // Close the rating modal immediately for better UX
+    setRatingVideoId(null)
+
+    const { error } = await supabase.from('ratings').upsert(
+      { user_id: session.user.id, video_id: videoId, score: score }, 
+      { onConflict: 'user_id, video_id' }
+    )
+
+    if (!error) {
+      // Refresh local data
+      const { data: updatedVideo } = await supabase
+        .from('videos')
+        .select('average_rating')
+        .eq('id', videoId)
+        .single()
+        
+      if (updatedVideo) {
+        setVideos(prev => prev.map(v => v.id === videoId ? { ...v, average_rating: updatedVideo.average_rating } : v))
+        if(activeVideo?.id === videoId) {
+          setActiveVideo(prev => ({ ...prev, average_rating: updatedVideo.average_rating }))
+        }
+      }
+    }
+  }
+
+  if (loading) return <div className="flex justify-center pt-20 text-white"><Loader2 className="animate-spin" /></div>
+  if (!profile) return <div className="pt-20 text-center text-white">User not found</div>
+
   return (
-    <div className="flex flex-col h-full bg-gray-900">
-      
-      {/* HEADER */}
-      <div className="p-6 pb-2 bg-gradient-to-b from-gray-800 to-gray-900 border-b border-gray-800">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h2 className="text-3xl font-black text-fuchsia-500 tracking-tighter">
-              {profileData.username || 'Unknown User'}
-            </h2>
+    <div className="min-h-full pb-20 px-4">
+      {/* Back Button */}
+      <button onClick={onBack} className="mb-6 flex items-center gap-2 text-gray-400 hover:text-white transition">
+        <ArrowLeft size={20} /> Back
+      </button>
+
+      {/* Profile Header */}
+      <div className="flex flex-col items-center mb-8 animate-in slide-in-from-bottom-4">
+        <div className="w-24 h-24 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-4xl font-bold text-white mb-4 shadow-2xl">
+          {profile.username?.charAt(0).toUpperCase()}
+        </div>
+        <h1 className="text-2xl font-bold text-white">@{profile.username}</h1>
+        <div className="flex gap-4 mt-2 text-sm text-gray-400">
+           <span>{videos.length} Videos</span>
+           <span>•</span>
+           <span>Joined {new Date(profile.created_at).toLocaleDateString()}</span>
+        </div>
+      </div>
+
+      {/* Video List */}
+      <div className="space-y-4">
+        {videos.map((video) => (
+          <div key={video.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex gap-4 hover:bg-gray-750 transition group cursor-pointer" onClick={() => setActiveVideo(video)}>
             
-            {/* UPDATED: JOIN DATE */}
-            <p className="text-gray-400 text-xs mt-1 font-medium">
-              since {formatDate(profileData.joinedAt)}
-            </p>
-          </div>
+            {/* Thumbnail */}
+            <div className="w-24 h-16 bg-black rounded-lg flex items-center justify-center shrink-0 border border-gray-700 relative overflow-hidden">
+               <video src={video.compressed_url || video.video_url} className="absolute inset-0 w-full h-full object-cover opacity-50" />
+               <PlayCircle className="relative z-10 text-white opacity-80" />
+            </div>
 
-          {!isOwnProfile && onBack && (
-             <button onClick={onBack} className="text-sm text-blue-400 font-bold hover:underline">
-               ← Back
-             </button>
-          )}
-        </div>
+            {/* Meta Data */}
+            <div className="flex-1 min-w-0 flex flex-col justify-center">
+              <h3 className="font-bold text-white truncate pr-4">{video.title}</h3>
+              
+              <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
+                
+                {/* INTERACTIVE RATING BUTTON */}
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation() 
+                    setRatingVideoId(video.id) // Open rating modal
+                  }}
+                  className="flex items-center gap-1 text-yellow-400 hover:text-yellow-200 transition bg-white/5 px-2 py-0.5 rounded-full hover:bg-white/10"
+                >
+                  <Star size={12} fill="currentColor" /> 
+                  <span className="font-bold">{video.average_rating?.toFixed(1) || '0.0'}</span>
+                </button>
+                
+                <span className="text-gray-600">|</span>
 
-        {/* Sorting Tabs */}
-        <div className="flex gap-2 mt-4">
-          <button 
-            onClick={() => setSortBy('date')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition ${
-              sortBy === 'date' ? 'bg-white text-black' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            <Calendar size={16} /> Newest
-          </button>
-          <button 
-            onClick={() => setSortBy('rank')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition ${
-              sortBy === 'rank' ? 'bg-yellow-400 text-black' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            <Trophy size={16} /> Top Rated
-          </button>
-        </div>
-      </div>
+                <span className="flex items-center gap-1">
+                  <Eye size={12} /> {video.view_count || 0}
+                </span>
 
-      {/* VIDEO LIST */}
-      <div className="flex-1 overflow-y-auto p-4 pb-32">
-        {loading ? (
-          <div className="flex justify-center p-10"><Loader2 className="animate-spin text-white"/></div>
-        ) : videos.length === 0 ? (
-          <div className="text-gray-500 text-center mt-10">No videos found.</div>
-        ) : (
-          <div className="space-y-4">
-            {videos.map((video) => (
-              <div 
-                key={video.id} 
-                onClick={() => setPlayingVideoId(video.id)} 
-                className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-3 flex gap-4 items-center cursor-pointer hover:bg-gray-800 transition group"
-              >
-                {/* Thumbnail */}
-                <div className="relative w-24 h-32 bg-black rounded-lg overflow-hidden flex-shrink-0 border border-gray-700 group-hover:border-gray-500 transition">
-                  <video 
-                    src={video.video_url} 
-                    className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition"
-                    muted 
-                    preload="metadata"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Play size={24} className="text-white opacity-80" />
-                  </div>
-                </div>
+                <span className="text-gray-600">|</span>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-white font-bold truncate text-lg group-hover:text-blue-400 transition">
-                    {video.title}
-                  </h3>
-                  
-                  <div className="flex items-center gap-2 mt-2">
-                     <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded text-yellow-400 border border-gray-700">
-                        <Star size={12} fill="currentColor" />
-                        <span className="text-xs font-bold">{video.average_rating?.toFixed(1) || '0.0'}</span>
-                     </div>
-                     <span className="text-gray-500 text-xs">
-                       {new Date(video.created_at).toLocaleDateString()}
-                     </span>
-                  </div>
-                </div>
+                <span className="flex items-center gap-1">
+                   <CalendarDays size={12} />
+                   {new Date(video.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </span>
               </div>
-            ))}
+            </div>
+
+            <button onClick={(e) => handleShare(e, video.id)} className="text-gray-500 hover:text-white p-2">
+              <Share2 size={18} />
+            </button>
           </div>
-        )}
+        ))}
       </div>
 
-      {/* PLAYER */}
-      {playingVideoId && activeVideo && (
-        <div 
-          onClick={() => setPlayingVideoId(null)}
-          className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center animate-in fade-in duration-200 cursor-pointer"
-        >
-          <video 
-            src={activeVideo.video_url}
-            className="max-h-full max-w-full w-auto h-auto object-contain shadow-2xl"
-            loop
-            autoPlay
-            playsInline
+      {/* --- MODALS --- */}
+
+      {/* 1. Video Player Modal */}
+      {activeVideo && (
+        <div className="fixed inset-0 z-50 bg-black">
+          <VideoPlayer 
+            videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
+            videoId={activeVideo.id}
+            audioSrc={activeVideo.audio_url}
+            initialRating={activeVideo.average_rating}
+            initialCommentCount={activeVideo.comments?.[0]?.count || 0}
+            onRate={handleRate}
+            onClose={() => setActiveVideo(null)} 
+            onUserClick={() => setActiveVideo(null)}
+            startMuted={false} 
           />
         </div>
       )}
+
+      {/* 2. Rating Modal (New) */}
+      {ratingVideoId && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setRatingVideoId(null)}>
+          <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl w-full max-w-sm relative" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setRatingVideoId(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+              <X size={24} />
+            </button>
+            <h3 className="text-center text-white font-bold text-lg mb-6">Rate this Video</h3>
+            <div className="flex justify-center gap-3">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => handleRate(ratingVideoId, star)}
+                  className="text-gray-600 hover:text-yellow-400 hover:scale-125 transition-transform"
+                >
+                  <Star size={40} className="fill-current" />
+                </button>
+              ))}
+            </div>
+            <p className="text-center text-gray-500 text-xs mt-6">Tap a star to submit</p>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
