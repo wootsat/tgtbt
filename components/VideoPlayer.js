@@ -1,6 +1,7 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link' 
+import { supabase } from '@/lib/supabaseClient' // <--- 1. Import Supabase
 import { X, Star, MessageCircle, Volume2, VolumeX, Share2 } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 
@@ -17,21 +18,31 @@ export default function VideoPlayer({
 }) {
   const videoRef = useRef(null)
   
-  // State
   const [rating, setRating] = useState(initialRating || 0)
   const [userRating, setUserRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
-  
   const [showControls, setShowControls] = useState(false)
   const [showComments, setShowComments] = useState(false) 
-  
-  // Initialize mute state directly from the prop
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
 
-  // --- NO USEEFFECT AUTOPLAY LOGIC ---
-  // We deleted all the complex autoplay code. 
-  // We trust the HTML tags below to do the work.
+  // --- 2. VIEW COUNT INCREMENT LOGIC ---
+  useEffect(() => {
+    const incrementView = async () => {
+      if (!videoId) return
+      
+      // We use RPC (Remote Procedure Call) to call the SQL function we just made
+      const { error } = await supabase.rpc('increment_view_count', { 
+        video_id: videoId 
+      })
+
+      if (error) console.error("Error incrementing view:", error)
+    }
+
+    // Call it once on mount
+    incrementView()
+  }, [videoId])
+  // -------------------------------------
 
   const handleVideoClick = (e) => {
     e.stopPropagation()
@@ -66,7 +77,6 @@ export default function VideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
       
-      {/* Home Button */}
       {showHomeButton && (
         <Link 
           href="/"
@@ -77,7 +87,6 @@ export default function VideoPlayer({
         </Link>
       )}
 
-      {/* Close Button */}
       <button 
         onClick={onClose} 
         className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
@@ -85,9 +94,6 @@ export default function VideoPlayer({
         <X size={36} strokeWidth={3} />
       </button>
 
-      {/* --- THE FIX: CONDITIONAL RENDERING --- */}
-      {/* If we want sound (Feed), we render a tag WITHOUT the muted attribute entirely. */}
-      {/* If we want mute (Share), we render a tag WITH the muted attribute. */}
       {startMuted ? (
         <video 
           ref={videoRef}
@@ -96,7 +102,7 @@ export default function VideoPlayer({
           loop
           playsInline
           autoPlay
-          muted // <--- Explicitly muted
+          muted 
         />
       ) : (
         <video 
@@ -106,18 +112,15 @@ export default function VideoPlayer({
           loop
           playsInline
           autoPlay 
-          // <--- NO MUTED ATTRIBUTE HERE. This forces the browser to play with sound.
         />
       )}
 
-      {/* Watermark */}
       <img 
         src="/tgtbt_logo.png" 
         alt="TGTBT" 
         className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none"
       />
 
-      {/* Controls Overlay */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">

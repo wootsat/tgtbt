@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, PlayCircle, User, Flame, CalendarDays, Sparkles, MessageCircle, Share2 } from 'lucide-react'
+import { Loader2, PlayCircle, User, Flame, CalendarDays, Sparkles, MessageCircle, Share2, Eye } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
 import CommentsOverlay from '@/components/CommentsOverlay'
 import { useSwipeable } from 'react-swipeable'
@@ -18,7 +18,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
 
-  // --- HISTORY / BACK BUTTON LOGIC ---
+  // --- HISTORY LOGIC ---
   const historyPushedRef = useRef(false)
 
   useEffect(() => {
@@ -27,14 +27,11 @@ export default function Feed({ onUserClick, onAuthRequired }) {
         window.history.pushState(null, '', window.location.pathname)
         historyPushedRef.current = true
       }
-
       const handlePopState = () => {
         historyPushedRef.current = false 
         setActiveVideo(null)
       }
-
       window.addEventListener('popstate', handlePopState)
-
       return () => {
         window.removeEventListener('popstate', handlePopState)
       }
@@ -99,6 +96,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
     const from = pageNumber * BATCH_SIZE
     const to = from + BATCH_SIZE - 1
 
+    // Added view_count to the select query just in case it wasn't being fetched
     let query = supabase
       .from('videos')
       .select('*, profiles(username), comments(count)')
@@ -196,16 +194,13 @@ export default function Feed({ onUserClick, onAuthRequired }) {
         <div className="fixed inset-0 z-40 bg-black">
           <VideoPlayer 
             videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
-            
-            // --- CRITICAL FIX: PASS THE ID HERE ---
-            videoId={activeVideo.id} 
-            // -------------------------------------
-
+            videoId={activeVideo.id}
             initialRating={activeVideo.average_rating}
             initialCommentCount={getCommentCount(activeVideo)}
             onRate={handleRate}
             onClose={closeVideo} 
             onUserClick={onUserClick}
+            startMuted={false} // Sound ON for Feed
           />
         </div>
       )}
@@ -228,7 +223,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
             WEEKLY <CalendarDays size={12} />
           </button>
         </div>
-
+        
         <p className="text-gray-500 text-[10px] uppercase tracking-widest animate-pulse md:hidden mt-2">
            Swipe Left / Right to switch
         </p>
@@ -243,6 +238,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
               
               <div onClick={() => setActiveVideo(video)} className="cursor-pointer relative z-10 flex items-center gap-4">
                 
+                {/* RANK / INDEX BADGE */}
                 <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-black text-xl shadow-lg ${
                   currentTab === 'new' ? 'bg-gray-800 text-green-400 border border-gray-700' :
                   index === 0 ? 'bg-yellow-400 text-black' : 
@@ -253,53 +249,72 @@ export default function Feed({ onUserClick, onAuthRequired }) {
                   {currentTab === 'new' ? <Sparkles size={20} /> : index + 1 + (page * BATCH_SIZE)}
                 </div>
 
-                <div className="flex-1 min-w-0">
+                {/* --- VIDEO INFO --- */}
+                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                  
+                  {/* Line 1: Title */}
                   <h3 className="truncate text-lg font-bold text-white group-hover:text-blue-400 transition-colors">
                     {video.title}
                   </h3>
                   
-                  <div className="flex items-center gap-4 text-xs mt-1">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); if(onUserClick) onUserClick(video.user_id); }}
-                      className="flex items-center gap-1 text-fuchsia-500 font-bold hover:text-fuchsia-400 hover:underline z-20"
-                    >
-                      <User size={14} /> {video.profiles?.username || 'Unknown'}
-                    </button>
+                  {/* Line 2: Username (Own line prevents overflow issues) */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); if(onUserClick) onUserClick(video.user_id); }}
+                    className="flex items-center gap-1 text-fuchsia-500 font-bold hover:text-fuchsia-400 hover:underline text-xs mt-0.5 w-fit"
+                  >
+                    <User size={12} /> {video.profiles?.username || 'Unknown'}
+                  </button>
+                  
+                  {/* Line 3: Metrics Row (Uniform Layout) */}
+                  <div className="flex items-center gap-3 text-gray-400 text-[10px] mt-1.5 font-medium">
                     
-                    <div className="flex items-center gap-3">
-                      {currentTab === 'new' ? (
-                        <span className="text-gray-400 text-[10px]">
-                          {new Date(video.created_at).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      ) : (
-                        <span className="text-yellow-400 flex items-center gap-1">
-                           ★ {video.average_rating?.toFixed(1) || '0.0'}
-                        </span>
-                      )}
+                    {/* Date or Rating */}
+                    {currentTab === 'new' ? (
+                      <span className="text-gray-400">
+                        {new Date(video.created_at).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit' })}
+                      </span>
+                    ) : (
+                      <span className="text-yellow-400 flex items-center gap-1">
+                         ★ {video.average_rating?.toFixed(1) || '0.0'}
+                      </span>
+                    )}
 
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation() 
-                          setCommentVideoId(video.id)
-                        }}
-                        className="flex items-center gap-1 text-gray-400 hover:text-white transition z-20"
-                      >
-                        <MessageCircle size={14} />
-                        <span className="text-[10px]">Comments ({getCommentCount(video)})</span>
-                      </button>
+                    <span className="text-gray-600">|</span>
 
-                      <button 
-                        onClick={(e) => handleShare(e, video.id)}
-                        className="flex items-center gap-1 text-gray-400 hover:text-white transition z-20 ml-2"
-                      >
-                        <Share2 size={14} />
-                      </button>
+                    {/* Views */}
+                    <span className="flex items-center gap-1 text-gray-400">
+                       <Eye size={12} /> {video.view_count || 0}
+                    </span>
 
-                    </div>
+                    <span className="text-gray-600">|</span>
+
+                    {/* Comments */}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation() 
+                        setCommentVideoId(video.id)
+                      }}
+                      className="flex items-center gap-1 hover:text-white transition"
+                    >
+                      <MessageCircle size={12} />
+                      {getCommentCount(video)}
+                    </button>
+
+                    <span className="text-gray-600">|</span>
+
+                    {/* Share */}
+                    <button 
+                      onClick={(e) => handleShare(e, video.id)}
+                      className="hover:text-white transition"
+                    >
+                      <Share2 size={12} />
+                    </button>
 
                   </div>
                 </div>
-                <PlayCircle className="text-gray-500 group-hover:text-white transition-colors" size={28} />
+
+                {/* Play Button Icon (Right Side) */}
+                <PlayCircle className="text-gray-500 group-hover:text-white transition-colors shrink-0" size={28} />
               </div>
             </div>
           ))}
