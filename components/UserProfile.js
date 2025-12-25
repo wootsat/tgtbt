@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { ArrowLeft, Star, CalendarDays, Eye, Share2, PlayCircle, Loader2, X, Heart, ArrowUpDown } from 'lucide-react'
+import { ArrowLeft, Star, CalendarDays, Eye, Share2, PlayCircle, Loader2, X, Heart, ArrowUpDown, Trash2 } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
 import CommentsOverlay from '@/components/CommentsOverlay'
 
@@ -23,8 +23,30 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
   const [activeVideo, setActiveVideo] = useState(null)
   const [commentVideoId, setCommentVideoId] = useState(null)
   const [ratingVideoId, setRatingVideoId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
 
   const isMyProfile = session?.user?.id === targetUserId
+
+  // --- HISTORY FOR RATING MODAL ---
+  useEffect(() => {
+    if (!ratingVideoId) return;
+    window.history.pushState({ modal: 'rating' }, '', window.location.href);
+    const handlePopState = (event) => {
+      event.preventDefault();
+      setRatingVideoId(null);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [ratingVideoId]);
+
+  const closeRatingModal = () => {
+    if (window.history.state?.modal === 'rating') {
+        window.history.back();
+    } else {
+        setRatingVideoId(null);
+    }
+  }
+  // --------------------------------
 
   useEffect(() => {
     fetchProfileData()
@@ -34,12 +56,9 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     try {
       setLoading(true)
       
-      // 1. Profile
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', targetUserId).single()
       setProfile(profileData)
 
-      // 2. User's Own Videos
-      // UPDATED: Added 'video_favorites(count)' to the selection
       const { data: videoData } = await supabase
         .from('videos')
         .select('*, comments(count), video_favorites(count)') 
@@ -48,15 +67,12 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       setVideos(videoData || [])
 
       if (isMyProfile) {
-        // A. Favorite USERS
         const { data: favUserData } = await supabase
           .from('user_favorites')
           .select('favorite_user_id, profiles!user_favorites_favorite_user_id_fkey(id, username)')
           .eq('user_id', targetUserId)
         setFavUsers(favUserData?.map(f => f.profiles) || [])
 
-        // B. Favorite VIDEOS (TGTBTs)
-        // UPDATED: Added 'video_favorites(count)' here too
         const { data: favVideoData } = await supabase
           .from('video_favorites')
           .select('video_id, videos!video_favorites_video_id_fkey(*, comments(count), video_favorites(count))')
@@ -64,14 +80,12 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
           .order('created_at', { ascending: false })
         setFavVideos(favVideoData?.map(f => f.videos) || [])
 
-        // C. Total Favorites Stats
         if (videoData && videoData.length > 0) {
           const totalFavs = videoData.reduce((acc, curr) => acc + (curr.video_favorites?.[0]?.count || 0), 0)
           setTotalFavoritesReceived(totalFavs)
         }
       }
 
-      // Am I following?
       if (session && !isMyProfile) {
         const { data: amIFollowing } = await supabase
           .from('user_favorites')
@@ -102,6 +116,29 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     setFollowLoading(false)
   }
 
+  // --- DELETE VIDEO FUNCTION ---
+  const handleDeleteVideo = async (videoId) => {
+    if (!confirm("Are you sure you want to delete this video? This cannot be undone.")) return
+    
+    setDeletingId(videoId)
+    
+    // 1. Delete from Database
+    const { error } = await supabase
+      .from('videos')
+      .delete()
+      .eq('id', videoId)
+      .eq('user_id', session.user.id) // Extra safety check
+
+    if (error) {
+      alert("Error deleting video: " + error.message)
+    } else {
+      // 2. Update Local State immediately
+      setVideos(prev => prev.filter(v => v.id !== videoId))
+    }
+    setDeletingId(null)
+  }
+  // -----------------------------
+
   const getSortedVideos = (list) => {
     const listCopy = [...list]
     switch (sortOption) {
@@ -115,17 +152,15 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
 
   const handleRate = async (videoId, score) => {
     if (!session) return alert("Please log in to rate.")
-    setRatingVideoId(null)
+    if (ratingVideoId) closeRatingModal();
     const { error } = await supabase.from('ratings').upsert({ user_id: session.user.id, video_id: videoId, score: score }, { onConflict: 'user_id, video_id' })
   }
 
-  // --- RENDER LIST ---
   const renderVideoList = (videoList, emptyMessage) => {
     const sortedList = getSortedVideos(videoList)
     
     return (
       <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        {/* Sort Controls */}
         {videoList.length > 0 && (
           <div className="flex justify-end mb-2">
             <div className="relative">
@@ -145,11 +180,10 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
         )}
 
         {sortedList.map((video) => {
-          // Calculate favorite count safely
           const favCount = video.video_favorites?.[0]?.count || 0
 
           return (
-            <div key={video.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex gap-4 hover:bg-gray-750 transition group cursor-pointer" onClick={() => setActiveVideo(video)}>
+            <div key={video.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex gap-4 hover:bg-gray-750 transition group cursor-pointer relative" onClick={() => setActiveVideo(video)}>
               <div className="w-24 h-16 bg-black rounded-lg flex items-center justify-center shrink-0 border border-gray-700 relative overflow-hidden">
                  <video src={video.compressed_url || video.video_url} className="absolute inset-0 w-full h-full object-cover opacity-50" />
                  <PlayCircle className="relative z-10 text-white opacity-80" />
@@ -158,16 +192,12 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
                 <h3 className="font-bold text-white truncate pr-4">{video.title}</h3>
                 
                 <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
-                  {/* Rating */}
                   <button onClick={(e) => { e.stopPropagation(); setRatingVideoId(video.id); }} className="flex items-center gap-1 text-yellow-400 hover:text-yellow-200 transition bg-white/5 px-2 py-0.5 rounded-full hover:bg-white/10">
                     <Star size={12} fill="currentColor" /> <span className="font-bold">{video.average_rating?.toFixed(1) || '0.0'}</span>
                   </button>
                   <span className="text-gray-600">|</span>
-                  
-                  {/* Views */}
                   <span className="flex items-center gap-1"><Eye size={12} /> {video.view_count || 0}</span>
                   
-                  {/* NEW: Favorites Count (Only if > 0) */}
                   {favCount > 0 && (
                     <>
                       <span className="text-gray-600">|</span>
@@ -178,20 +208,34 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
                   )}
 
                   <span className="text-gray-600">|</span>
-                  
-                  {/* Date */}
                   <span className="flex items-center gap-1"><CalendarDays size={12} /> {new Date(video.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                 </div>
               </div>
               
-              <button onClick={async (e) => {
-                e.stopPropagation()
-                const shareUrl = `https://tgtbt.xyz/watch/${video.id}`
-                if(navigator.share) try{await navigator.share({title:'TGTBT',url:shareUrl})}catch(e){}
-                else{navigator.clipboard.writeText(shareUrl);alert('Link copied!')}
-              }} className="text-gray-500 hover:text-white p-2">
-                <Share2 size={18} />
-              </button>
+              <div className="flex flex-col gap-2 items-center">
+                  <button onClick={async (e) => {
+                    e.stopPropagation()
+                    const shareUrl = `https://tgtbt.xyz/watch/${video.id}`
+                    if(navigator.share) try{await navigator.share({title:'TGTBT',url:shareUrl})}catch(e){}
+                    else{navigator.clipboard.writeText(shareUrl);alert('Link copied!')}
+                  }} className="text-gray-500 hover:text-white p-1">
+                    <Share2 size={18} />
+                  </button>
+
+                  {/* DELETE BUTTON (Only if My Profile AND Viewing My Videos tab) */}
+                  {isMyProfile && activeTab === 'videos' && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteVideo(video.id)
+                      }} 
+                      disabled={deletingId === video.id}
+                      className="text-gray-500 hover:text-red-500 p-1 transition"
+                    >
+                      {deletingId === video.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                    </button>
+                  )}
+              </div>
             </div>
           )
         })}
@@ -285,7 +329,8 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
 
       {/* MODALS */}
       {activeVideo && (
-        <div className="fixed inset-0 z-50 bg-black">
+        // z-[100] applied from previous step to hide header
+        <div className="fixed inset-0 z-[100] bg-black">
           <VideoPlayer 
             videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
             videoId={activeVideo.id}
@@ -301,9 +346,12 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       )}
 
       {ratingVideoId && (
-        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setRatingVideoId(null)}>
+        <div 
+            className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" 
+            onClick={closeRatingModal}
+        >
           <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl w-full max-w-sm relative" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setRatingVideoId(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
+            <button onClick={closeRatingModal} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
             <h3 className="text-center text-white font-bold text-lg mb-6">Rate this Video</h3>
             <div className="flex justify-center gap-3">
               {[1, 2, 3, 4, 5].map((star) => (

@@ -191,7 +191,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
       )}
 
       {activeVideo && (
-        <div className="fixed inset-0 z-40 bg-black">
+        <div className="fixed inset-0 z-[100] bg-black">
           <VideoPlayer 
             videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
             videoId={activeVideo.id}
