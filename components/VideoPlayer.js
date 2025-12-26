@@ -9,10 +9,8 @@ export default function VideoPlayer({
   videoSrc, 
   videoId, 
   audioSrc = null, 
-  // NEW PROPS:
   creatorUsername,
   creatorId,
-  // ----------
   initialRating, 
   initialCommentCount = 0, 
   onRate, 
@@ -153,20 +151,40 @@ export default function VideoPlayer({
         )
       )}
 
-      <img src="/tgtbt_logo.png" alt="TGTBT" className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none" />
+      {/* WATERMARK LOGO */}
+      {/* - w-80: Standard Mobile Portrait (Large)
+          - sm:w-96: Desktop/Tablet (Even Larger)
+          - landscape:w-20: Mobile Landscape (Tiny & Tucked Away)
+      */}
+      <img 
+        src="/tgtbt_logo.png" 
+        alt="TGTBT" 
+        className="absolute z-10 select-none opacity-50 pointer-events-none h-auto 
+                   
+                   /* 1. DEFAULT (Mobile Portrait) */
+                   bottom-8 right-8 w-80 
+
+                   /* 2. PHONE LANDSCAPE (Applied to all horizontal screens initially) */
+                   landscape:w-20 landscape:bottom-4 landscape:right-4
+
+                   /* 3. TABLET/DESKTOP RESTORATION (Overrides the small landscape size) */
+                   md:landscape:w-80 md:landscape:bottom-8 md:landscape:right-8
+                   
+                   /* 4. LARGE DESKTOP (Makes it huge) */
+                   lg:landscape:w-[30rem]" 
+      />
 
       {/* --- CONTROLS OVERLAY --- */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
             
-            {/* NEW: CLICKABLE USERNAME */}
+            {/* CLICKABLE USERNAME */}
             {creatorUsername && (
                 <button 
                     onClick={(e) => {
                         e.stopPropagation();
-                        // SIMPLE: Just fire the event. 
-                        // Parent (Page.tsx) handles the history replacement.
+                        // Parent (Page.tsx) handles history replacement logic
                         if (onUserClick) onUserClick(creatorId);
                     }}
                     className="flex items-center gap-2 text-white/90 hover:text-blue-400 hover:scale-110 transition mb-2"
@@ -220,7 +238,6 @@ export default function VideoPlayer({
             onClose={() => setShowComments(false)} 
             isInsidePlayer={true} 
             onCommentAdded={() => setCommentCount(prev => prev + 1)} 
-            // SIMPLE: Just fire event
             onUserClick={onUserClick} 
           />
         </div>
