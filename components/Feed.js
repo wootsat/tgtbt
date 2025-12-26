@@ -99,7 +99,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
     // Added view_count to the select query just in case it wasn't being fetched
     let query = supabase
       .from('videos')
-      .select('*, profiles(username), comments(count)')
+      .select('*, profiles(username, avatar_url), comments(count)')
       .range(from, to)
 
     if (tab === 'new') {

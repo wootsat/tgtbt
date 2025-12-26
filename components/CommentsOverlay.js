@@ -19,7 +19,7 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
     setLoading(true)
     const { data, error } = await supabase
       .from('comments')
-      .select('*, profiles(username)')
+      .select('*, profiles(username, avatar_url)')
       .eq('video_id', videoId)
       .order('created_at', { ascending: true })
 
@@ -86,9 +86,13 @@ export default function CommentsOverlay({ videoId, onClose, onAuthRequired, isIn
           ) : (
             comments.map((comment) => (
               <div key={comment.id} className="flex gap-3 animate-in slide-in-from-bottom-2">
-                <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0 overflow-hidden">
+                {comment.profiles?.avatar_url ? (
+                  <img src={comment.profiles.avatar_url} className="w-full h-full object-cover" />
+                ) : (
                   <User size={14} className="text-gray-300" />
-                </div>
+                )}
+              </div>
                 <div className="bg-gray-800/80 rounded-2xl rounded-tl-none p-3 max-w-[85%]">
                   {/* Username Button */}
                   <button 
