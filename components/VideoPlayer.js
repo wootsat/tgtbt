@@ -165,7 +165,7 @@ export default function VideoPlayer({
                    bottom-8 right-8 w-80 
 
                    /* 2. PHONE LANDSCAPE (Applied to all horizontal screens initially) */
-                   landscape:w-20 landscape:bottom-4 landscape:right-4
+                   landscape:w-12 landscape:bottom-2 landscape:right-2
 
                    /* 3. TABLET/DESKTOP RESTORATION (Overrides the small landscape size) */
                    md:landscape:w-80 md:landscape:bottom-8 md:landscape:right-8
