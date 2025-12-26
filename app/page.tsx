@@ -77,18 +77,13 @@ export default function Home() {
     setTargetProfileId(userId);
     setViewMode('profile');
     
-    // --- THE FIX ---
-    // If we are currently watching a video (history state has videoOpen),
-    // we REPLACE that state with the profile state.
-    // This prevents "Back" logic from firing and dumping us on the home page.
+    // REPLACE history if watching video, otherwise PUSH
     if (window.history.state?.videoOpen || window.history.state?.modal === 'video') {
         window.history.replaceState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
     } else {
-        // Otherwise, standard push
         window.history.pushState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
     }
     
-    // If we were watching a standalone search video, close it now
     if (searchedVideo) setSearchedVideo(null);
   }
 
@@ -199,7 +194,6 @@ export default function Home() {
                  onSelectVideo={(video) => {
                      setShowSearch(false);
                      setSearchedVideo(video);
-                     // Set specific history state so we know to replace it later if needed
                      window.history.replaceState({ modal: 'video' }, '', window.location.href);
                  }}
               />
@@ -207,9 +201,11 @@ export default function Home() {
         )}
       </div>
 
-      {/* --- FULL SCREEN OVERLAYS --- */}
+      {/* --- FULL SCREEN OVERLAYS (Use FIXED to prevent scrolling issues) --- */}
+      
       {searchedVideo && (
-        <div className="absolute inset-0 z-[100] bg-black">
+        // FIX: Changed from absolute to fixed inset-0
+        <div className="fixed inset-0 z-[100] bg-black">
           <VideoPlayer 
             videoSrc={searchedVideo.compressed_url || searchedVideo.video_url} 
             videoId={searchedVideo.id}
@@ -223,7 +219,6 @@ export default function Home() {
                  await supabase.from('ratings').upsert({ user_id: session.user.id, video_id: vidId, score }, { onConflict: 'user_id, video_id' })
             }}
             onClose={() => window.history.back()} 
-            // Simplified: Just pass ID, let Page.tsx handle the replace logic
             onUserClick={(uid) => navigateToProfile(uid)}
             startMuted={false} 
           />
@@ -231,7 +226,8 @@ export default function Home() {
       )}
 
       {showUpload && (
-        <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
+        // FIX: Changed from absolute to fixed inset-0
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-lg relative">
             <button onClick={() => setShowUpload(false)} className="absolute -top-12 right-0 text-gray-400 hover:text-white"><X size={32} /></button>
             <UploadVideo onUploadComplete={() => {
@@ -243,7 +239,8 @@ export default function Home() {
       )}
 
       {showAuth && (
-        <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
+        // FIX: Changed from absolute to fixed inset-0
+        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
            <Auth onClose={() => setShowAuth(false)} />
         </div>
       )}
