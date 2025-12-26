@@ -13,8 +13,8 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
   const [favVideos, setFavVideos] = useState([]) 
 
   const [loading, setLoading] = useState(true)
-  const [uploadingAvatar, setUploadingAvatar] = useState(false) // New State
-  const fileInputRef = useRef(null) // New Ref for file input
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const fileInputRef = useRef(null)
 
   const [activeTab, setActiveTab] = useState('videos') 
   const [sortOption, setSortOption] = useState('newest') 
@@ -29,6 +29,13 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
   const [deletingId, setDeletingId] = useState(null)
 
   const isMyProfile = session?.user?.id === targetUserId
+
+  // --- FIX: RESET TAB ON USER CHANGE ---
+  // This ensures if you were looking at "Favorites" on your profile,
+  // it resets to "Videos" when you click someone else.
+  useEffect(() => {
+    setActiveTab('videos');
+  }, [targetUserId]);
 
   // --- HISTORY FOR RATING MODAL ---
   useEffect(() => {
@@ -49,7 +56,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
         setRatingVideoId(null);
     }
   }
-  // --------------------------------
 
   useEffect(() => {
     fetchProfileData()
@@ -72,7 +78,7 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       if (isMyProfile) {
         const { data: favUserData } = await supabase
           .from('user_favorites')
-          .select('favorite_user_id, profiles!user_favorites_favorite_user_id_fkey(id, username, avatar_url)') // Added avatar_url
+          .select('favorite_user_id, profiles!user_favorites_favorite_user_id_fkey(id, username, avatar_url)') 
           .eq('user_id', targetUserId)
         setFavUsers(favUserData?.map(f => f.profiles) || [])
 
@@ -106,12 +112,10 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     }
   }
 
-  // --- AVATAR UPLOAD LOGIC ---
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // 1. Basic Validation
     if (file.size > 2 * 1024 * 1024) return alert("Image must be under 2MB")
     
     try {
@@ -120,19 +124,16 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       const fileName = `${session.user.id}-${Date.now()}.${fileExt}`
       const filePath = `${fileName}`
 
-      // 2. Upload to 'avatars' bucket
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file)
 
       if (uploadError) throw uploadError
 
-      // 3. Get Public URL
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath)
 
-      // 4. Update Profile in DB
       const { error: dbError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
@@ -140,7 +141,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
 
       if (dbError) throw dbError
 
-      // 5. Update Local State
       setProfile(prev => ({ ...prev, avatar_url: publicUrl }))
       alert("Profile picture updated!")
 
@@ -150,7 +150,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       setUploadingAvatar(false)
     }
   }
-  // ---------------------------
 
   const toggleFavoriteUser = async () => {
     if (!session) return alert("Please log in.")
@@ -165,7 +164,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     setFollowLoading(false)
   }
 
-  // --- DELETE VIDEO FUNCTION ---
   const handleDeleteVideo = async (videoId) => {
     if (!confirm("Are you sure you want to delete this video? This cannot be undone.")) return
     
@@ -184,7 +182,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     }
     setDeletingId(null)
   }
-  // -----------------------------
 
   const getSortedVideos = (list) => {
     const listCopy = [...list]
@@ -269,7 +266,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
                     <Share2 size={18} />
                   </button>
 
-                  {/* DELETE BUTTON (Only if My Profile AND Viewing My Videos tab) */}
                   {isMyProfile && activeTab === 'videos' && (
                     <button 
                       onClick={(e) => {
@@ -302,10 +298,8 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       <div className="flex flex-col items-center mb-6 animate-in slide-in-from-bottom-4">
         
         {/* AVATAR CIRCLE */}
-        {/* We add w-24 h-24 here to ensure the parent container matches the image size */}
         <div className="relative group mb-4 w-24 h-24"> 
           
-          {/* THE IMAGE */}
           <div className="w-full h-full bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-4xl font-bold text-white shadow-2xl overflow-hidden relative z-0">
             {profile.avatar_url ? (
                <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
@@ -315,7 +309,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
           </div>
 
           {/* THE BUTTON */}
-          {/* z-50 forces it to top. translate moves it slightly to overlap the edge nicely */}
           {isMyProfile && (
             <button 
               onClick={(e) => {
@@ -400,7 +393,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
           {favUsers.map((favUser) => (
             <div key={favUser.id} onClick={() => onUserClick && onUserClick(favUser.id)} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center gap-4 hover:bg-gray-700 transition cursor-pointer">
               <div className="w-10 h-10 bg-gradient-to-tr from-pink-500 to-orange-400 rounded-full flex items-center justify-center font-bold text-white shadow-md overflow-hidden">
-                 {/* SHOW AVATAR IN FAVORITES LIST */}
                  {favUser.avatar_url ? (
                     <img src={favUser.avatar_url} className="w-full h-full object-cover" />
                  ) : (
@@ -419,7 +411,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
 
       {/* MODALS */}
       {activeVideo && (
-        // z-[100] ensures this covers the header
         <div className="fixed inset-0 z-[100] bg-black">
           <VideoPlayer 
             videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
