@@ -165,7 +165,7 @@ export default function VideoPlayer({
                    bottom-8 right-8 w-80 
 
                    /* 2. ALL LANDSCAPE SCREENS (Phones & Tablets) - Now tiny! */
-                   landscape:w-90 landscape:bottom-4 landscape:right-6
+                   landscape:w-80 landscape:bottom-6 landscape:right-6
 
                    /* 3. DESKTOP ONLY (Restores big size only if screen is wider than 1024px) */
                    lg:landscape:w-[30rem] lg:landscape:bottom-10 lg:landscape:right-10" 
