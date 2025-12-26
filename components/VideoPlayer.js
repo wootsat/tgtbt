@@ -2,13 +2,17 @@
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link' 
 import { supabase } from '@/lib/supabaseClient' 
-import { X, Star, MessageCircle, Volume2, VolumeX, Share2, Heart } from 'lucide-react'
+import { X, Star, MessageCircle, Volume2, VolumeX, Share2, Heart, User } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 
 export default function VideoPlayer({ 
   videoSrc, 
   videoId, 
   audioSrc = null, 
+  // NEW PROPS:
+  creatorUsername,
+  creatorId,
+  // ----------
   initialRating, 
   initialCommentCount = 0, 
   onRate, 
@@ -27,20 +31,39 @@ export default function VideoPlayer({
   const [showComments, setShowComments] = useState(false) 
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
-
-  // FAVORITE STATE
   const [isFavorited, setIsFavorited] = useState(false)
 
-  // --- INITIALIZATION ---
+  // --- HISTORY LOGIC ---
+  useEffect(() => {
+    const handleHistory = () => {
+       window.history.pushState({ videoOpen: true }, '', window.location.href);
+    }
+    handleHistory();
+
+    const handlePopState = (event) => {
+      event.preventDefault();
+      onClose(); 
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleManualClose = () => {
+    if (window.history.state?.videoOpen) {
+       window.history.back(); 
+    } else {
+       onClose(); 
+    }
+  }
+  // ---------------------
+
   useEffect(() => {
     const initPlayer = async () => {
       if (!videoId) return
-
-      // 1. Increment View
       const { error } = await supabase.rpc('increment_view_count', { video_id: videoId })
       if (error) console.error("Error incrementing view:", error)
 
-      // 2. Check if Favorited
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data } = await supabase
@@ -55,7 +78,6 @@ export default function VideoPlayer({
     initPlayer()
   }, [videoId])
 
-  // --- HANDLERS ---
   const toggleFavorite = async (e) => {
     e.stopPropagation()
     const { data: { user } } = await supabase.auth.getUser()
@@ -110,11 +132,14 @@ export default function VideoPlayer({
         </Link>
       )}
 
-      <button onClick={onClose} className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+      <button 
+        onClick={handleManualClose} 
+        className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      >
         <X size={36} strokeWidth={3} />
       </button>
 
-      {/* VIDEO / AUDIO ELEMENTS */}
+      {/* MEDIA RENDERING */}
       {audioSrc ? (
         <>
           <video ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" loop playsInline autoPlay muted />
@@ -130,11 +155,29 @@ export default function VideoPlayer({
 
       <img src="/tgtbt_logo.png" alt="TGTBT" className="absolute bottom-8 right-8 w-80 h-auto opacity-50 pointer-events-none z-10 select-none" />
 
+      {/* --- CONTROLS OVERLAY --- */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
             
-            {/* STARS */}
+            {/* NEW: CLICKABLE USERNAME */}
+            {creatorUsername && (
+                <button 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        // Close video then go to profile
+                        handleManualClose();
+                        // Small timeout to allow history to settle before profile nav
+                        setTimeout(() => onUserClick && onUserClick(creatorId), 100);
+                    }}
+                    className="flex items-center gap-2 text-white/90 hover:text-blue-400 hover:scale-110 transition mb-2"
+                >
+                    <User size={20} className="text-blue-500" />
+                    <span className="text-xl font-bold shadow-black drop-shadow-lg">@{creatorUsername}</span>
+                </button>
+            )}
+
+            {/* Stars */}
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button key={star} onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)} onClick={(e) => { e.stopPropagation(); handleRate(star); }} className="transition transform hover:scale-125 focus:outline-none">
@@ -143,7 +186,7 @@ export default function VideoPlayer({
               ))}
             </div>
 
-            {/* CONTROLS ROW */}
+            {/* Buttons Row */}
             <div className="flex items-center gap-6 mt-2">
               <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                 {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
@@ -153,7 +196,6 @@ export default function VideoPlayer({
                 <MessageCircle size={20} /> <span className="text-sm font-bold">Comments ({commentCount})</span>
               </button>
 
-              {/* FAVORITE BUTTON */}
               <button onClick={toggleFavorite} className={`transition transform hover:scale-110 ${isFavorited ? 'text-pink-500 fill-pink-500' : 'text-white/80 hover:text-white'}`}>
                 <Heart size={24} className={isFavorited ? "fill-pink-500" : ""} />
               </button>
@@ -170,8 +212,8 @@ export default function VideoPlayer({
         <div 
             className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" 
             onClick={(e) => { 
-                e.stopPropagation(); // Don't click the video behind it
-                setShowComments(false); // Close the comments
+                e.stopPropagation(); 
+                setShowComments(false); 
             }}
         >
           <CommentsOverlay 
@@ -179,7 +221,10 @@ export default function VideoPlayer({
             onClose={() => setShowComments(false)} 
             isInsidePlayer={true} 
             onCommentAdded={() => setCommentCount(prev => prev + 1)} 
-            onUserClick={onUserClick} 
+            onUserClick={(uid) => {
+                handleManualClose();
+                setTimeout(() => onUserClick && onUserClick(uid), 100);
+            }} 
           />
         </div>
       )}

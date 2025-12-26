@@ -416,11 +416,18 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
             videoSrc={activeVideo.compressed_url || activeVideo.video_url} 
             videoId={activeVideo.id}
             audioSrc={activeVideo.audio_url}
+            creatorUsername={activeVideo.profiles?.username} 
+            creatorId={activeVideo.user_id}
             initialRating={activeVideo.average_rating}
             initialCommentCount={activeVideo.comments?.[0]?.count || 0}
             onRate={handleRate}
             onClose={() => setActiveVideo(null)} 
-            onUserClick={() => setActiveVideo(null)}
+
+            onUserClick={(id) => {
+              setActiveVideo(null); // 1. Close the video modal
+              onUserClick(id);      // 2. actually navigate to the new user
+          }}
+
             startMuted={false} 
           />
         </div>

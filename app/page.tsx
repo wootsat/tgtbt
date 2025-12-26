@@ -1,13 +1,14 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { LogOut, PlusCircle, X, User, Home as HomeIcon, LogIn } from 'lucide-react'
+import { LogOut, PlusCircle, X, User, Home as HomeIcon, LogIn, Search } from 'lucide-react'
 
-// Components
 import UploadVideo from '@/components/UploadVideo'
 import UserProfile from '@/components/UserProfile'
 import Feed from '@/components/Feed' 
 import Auth from '@/components/Auth'
+import SearchOverlay from '@/components/SearchOverlay' 
+import VideoPlayer from '@/components/VideoPlayer' 
 
 export default function Home() {
   const [session, setSession] = useState(null)
@@ -15,10 +16,10 @@ export default function Home() {
   // View State
   const [showUpload, setShowUpload] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
+  const [showSearch, setShowSearch] = useState(false) 
   const [viewMode, setViewMode] = useState('feed') 
   const [targetProfileId, setTargetProfileId] = useState(null)
-  
-  // Forces Feed refresh
+  const [searchedVideo, setSearchedVideo] = useState(null) 
   const [feedKey, setFeedKey] = useState(0)
 
   // 1. Session Check
@@ -35,23 +36,31 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // 2. --- HISTORY ROUTER (The Fix) ---
+  // 2. --- HISTORY ROUTER ---
   useEffect(() => {
-    // A. Set initial state on load so we have a base to go back to
     window.history.replaceState({ view: 'feed' }, '', window.location.pathname);
 
-    // B. Listen for the Back Button
     const handlePopState = (event) => {
       const state = event.state;
       
-      // If we popped back to a profile state
+      // If we are watching a searched video, close it
+      if (searchedVideo) {
+         setSearchedVideo(null);
+         return; 
+      }
+
+      // If search is open (and user didn't select anything), close it
+      if (showSearch) {
+        setShowSearch(false);
+        return;
+      }
+
       if (state?.view === 'profile' && state?.profileId) {
         setTargetProfileId(state.profileId);
         setViewMode('profile');
-        setShowUpload(false); // Ensure overlays are closed
+        setShowUpload(false);
         setShowAuth(false);
       } 
-      // If we popped back to feed (or null state)
       else {
         setViewMode('feed');
         setTargetProfileId(null);
@@ -62,24 +71,18 @@ export default function Home() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [searchedVideo, showSearch]); // Added dependencies
 
   // 3. --- NAVIGATION HANDLERS ---
-  
   const navigateToProfile = (userId) => {
-    // Avoid pushing duplicate states if we are already there
     if (viewMode === 'profile' && targetProfileId === userId) return;
-
     setTargetProfileId(userId);
     setViewMode('profile');
-    
-    // Push new history entry
     window.history.pushState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
   }
 
   const navigateToFeed = () => {
     if (viewMode === 'feed') {
-        // If already on feed, just scroll to top/refresh
         setFeedKey(prev => prev + 1);
         return;
     }
@@ -87,8 +90,7 @@ export default function Home() {
     setTargetProfileId(null);
     setShowUpload(false);
     setShowAuth(false);
-    
-    // Push feed state
+    setShowSearch(false);
     window.history.pushState({ view: 'feed' }, '', window.location.pathname);
     setFeedKey(prev => prev + 1);
   }
@@ -115,23 +117,19 @@ export default function Home() {
       
       {/* --- NAVBAR --- */}
       <div className="w-full max-w-2xl p-4 flex justify-between items-center z-50 absolute top-0 bg-gradient-to-b from-black/90 to-transparent">
-        
-        {/* Logo -> Goes Home */}
         <button onClick={navigateToFeed} className="hover:opacity-80 transition hover:scale-105 active:scale-95">
           <img src="/tgtbt_logo.png" alt="TGTBT" className="h-24 w-auto object-contain" />
         </button>
         
-        {/* Right Buttons */}
         <div className="flex items-center gap-2">
-          
-          {/* Profile / Home Toggle */}
+          <button onClick={() => setShowSearch(true)} className="text-white hover:text-blue-400 transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-white/10">
+             <Search size={26} />
+          </button>
+
           <button 
             onClick={() => requireAuth(() => {
-              if (isMyProfile) {
-                navigateToFeed()
-              } else {
-                navigateToProfile(session.user.id)
-              }
+              if (isMyProfile) navigateToFeed()
+              else navigateToProfile(session.user.id)
             })}
             className={`transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-white/10 
               ${isMyProfile ? 'text-blue-400 hover:text-blue-300' : 'text-white hover:text-blue-400'}`}
@@ -139,27 +137,16 @@ export default function Home() {
             {isMyProfile ? <HomeIcon size={28} /> : <User size={28} />}
           </button>
 
-          {/* Upload Button */}
-          <button 
-            onClick={() => requireAuth(() => setShowUpload(true))} 
-            className="text-white hover:text-green-400 transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-white/10"
-          >
+          <button onClick={() => requireAuth(() => setShowUpload(true))} className="text-white hover:text-green-400 transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-white/10">
             <PlusCircle size={30} />
           </button>
           
-          {/* Login / Logout */}
           {session ? (
-            <button 
-              onClick={handleLogout} 
-              className="text-gray-400 hover:text-red-500 transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-red-900/50 active:scale-95"
-            >
+            <button onClick={handleLogout} className="text-gray-400 hover:text-red-500 transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-red-900/50 active:scale-95">
               <LogOut size={26} />
             </button>
           ) : (
-            <button 
-              onClick={() => setShowAuth(true)} 
-              className="flex items-center gap-1 text-white font-bold hover:text-blue-400 transition transform hover:scale-110 px-3 py-2 h-12"
-            >
+            <button onClick={() => setShowAuth(true)} className="flex items-center gap-1 text-white font-bold hover:text-blue-400 transition transform hover:scale-110 px-3 py-2 h-12">
               <LogIn size={20} /> <span className="hidden sm:inline">Log In</span>
             </button>
           )}
@@ -174,7 +161,7 @@ export default function Home() {
              <Feed 
                key={feedKey} 
                onAuthRequired={() => setShowAuth(true)}
-               onUserClick={(userId) => navigateToProfile(userId)} // UPDATED to use history
+               onUserClick={(userId) => navigateToProfile(userId)} 
              />
            </div>
         )}
@@ -184,14 +171,64 @@ export default function Home() {
              <UserProfile 
                 session={session} 
                 targetUserId={targetProfileId} 
-                onBack={navigateToFeed} // UPDATED
-                onUserClick={(id) => navigateToProfile(id)} // UPDATED (allows jumping profile to profile)
+                onBack={navigateToFeed} 
+                onUserClick={(id) => navigateToProfile(id)} 
              />
+           </div>
+        )}
+
+        {/* --- SEARCH OVERLAY (Moved Inside Content for Width Constraint) --- */}
+        {showSearch && (
+           <div className="absolute inset-0 z-50">
+              <SearchOverlay 
+                 onClose={() => setShowSearch(false)}
+                 onSelectUser={(userId) => {
+                     // 1. Close search & Navigate
+                     setShowSearch(false);
+                     navigateToProfile(userId);
+                     // 2. Replace the "search" history entry with the profile entry
+                     window.history.replaceState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
+                 }}
+                 onSelectVideo={(video) => {
+                     // 1. Close search & Open Video
+                     setShowSearch(false);
+                     setSearchedVideo(video);
+                     // 2. Replace "search" history entry with "video" state so Back button works
+                     window.history.replaceState({ modal: 'video' }, '', window.location.href);
+                 }}
+              />
            </div>
         )}
       </div>
 
-      {/* --- UPLOAD OVERLAY --- */}
+      {/* --- FULL SCREEN OVERLAYS --- */}
+      {searchedVideo && (
+        <div className="absolute inset-0 z-[100] bg-black">
+          <VideoPlayer 
+            videoSrc={searchedVideo.compressed_url || searchedVideo.video_url} 
+            videoId={searchedVideo.id}
+            audioSrc={searchedVideo.audio_url}
+            initialRating={searchedVideo.average_rating}
+            initialCommentCount={searchedVideo.comments?.[0]?.count || 0}
+            onRate={async (vidId, score) => {
+                 if (!session) return setShowAuth(true);
+                 await supabase.from('ratings').upsert({ user_id: session.user.id, video_id: vidId, score }, { onConflict: 'user_id, video_id' })
+            }}
+            onClose={() => {
+                // Manually going back mimics clicking the Back button, 
+                // ensuring history stays in sync
+                window.history.back(); 
+            }} 
+            onUserClick={(uid) => {
+                // If user clicks profile from within searched video
+                setSearchedVideo(null);
+                navigateToProfile(uid);
+            }}
+            startMuted={false} 
+          />
+        </div>
+      )}
+
       {showUpload && (
         <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-lg relative">
@@ -204,7 +241,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* --- AUTH OVERLAY --- */}
       {showAuth && (
         <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
            <Auth onClose={() => setShowAuth(false)} />
