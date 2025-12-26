@@ -164,14 +164,11 @@ export default function VideoPlayer({
                    /* 1. DEFAULT (Mobile Portrait) */
                    bottom-8 right-8 w-80 
 
-                   /* 2. PHONE LANDSCAPE (Applied to all horizontal screens initially) */
+                   /* 2. ALL LANDSCAPE SCREENS (Phones & Tablets) - Now tiny! */
                    landscape:w-12 landscape:bottom-2 landscape:right-2
 
-                   /* 3. TABLET/DESKTOP RESTORATION (Overrides the small landscape size) */
-                   md:landscape:w-80 md:landscape:bottom-8 md:landscape:right-8
-                   
-                   /* 4. LARGE DESKTOP (Makes it huge) */
-                   lg:landscape:w-[30rem]" 
+                   /* 3. DESKTOP ONLY (Restores big size only if screen is wider than 1024px) */
+                   lg:landscape:w-[30rem] lg:landscape:bottom-10 lg:landscape:right-10" 
       />
 
       {/* --- CONTROLS OVERLAY --- */}
