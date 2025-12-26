@@ -13,7 +13,6 @@ import VideoPlayer from '@/components/VideoPlayer'
 export default function Home() {
   const [session, setSession] = useState(null)
   
-  // View State
   const [showUpload, setShowUpload] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
   const [showSearch, setShowSearch] = useState(false) 
@@ -43,13 +42,11 @@ export default function Home() {
     const handlePopState = (event) => {
       const state = event.state;
       
-      // If we are watching a searched video, close it
       if (searchedVideo) {
          setSearchedVideo(null);
          return; 
       }
 
-      // If search is open (and user didn't select anything), close it
       if (showSearch) {
         setShowSearch(false);
         return;
@@ -71,14 +68,28 @@ export default function Home() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [searchedVideo, showSearch]); // Added dependencies
+  }, [searchedVideo, showSearch]); 
 
   // 3. --- NAVIGATION HANDLERS ---
   const navigateToProfile = (userId) => {
     if (viewMode === 'profile' && targetProfileId === userId) return;
+
     setTargetProfileId(userId);
     setViewMode('profile');
-    window.history.pushState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
+    
+    // --- THE FIX ---
+    // If we are currently watching a video (history state has videoOpen),
+    // we REPLACE that state with the profile state.
+    // This prevents "Back" logic from firing and dumping us on the home page.
+    if (window.history.state?.videoOpen || window.history.state?.modal === 'video') {
+        window.history.replaceState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
+    } else {
+        // Otherwise, standard push
+        window.history.pushState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
+    }
+    
+    // If we were watching a standalone search video, close it now
+    if (searchedVideo) setSearchedVideo(null);
   }
 
   const navigateToFeed = () => {
@@ -177,23 +188,18 @@ export default function Home() {
            </div>
         )}
 
-        {/* --- SEARCH OVERLAY (Moved Inside Content for Width Constraint) --- */}
         {showSearch && (
            <div className="absolute inset-0 z-50">
               <SearchOverlay 
                  onClose={() => setShowSearch(false)}
                  onSelectUser={(userId) => {
-                     // 1. Close search & Navigate
                      setShowSearch(false);
                      navigateToProfile(userId);
-                     // 2. Replace the "search" history entry with the profile entry
-                     window.history.replaceState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
                  }}
                  onSelectVideo={(video) => {
-                     // 1. Close search & Open Video
                      setShowSearch(false);
                      setSearchedVideo(video);
-                     // 2. Replace "search" history entry with "video" state so Back button works
+                     // Set specific history state so we know to replace it later if needed
                      window.history.replaceState({ modal: 'video' }, '', window.location.href);
                  }}
               />
@@ -208,22 +214,17 @@ export default function Home() {
             videoSrc={searchedVideo.compressed_url || searchedVideo.video_url} 
             videoId={searchedVideo.id}
             audioSrc={searchedVideo.audio_url}
+            creatorUsername={searchedVideo.profiles?.username}
+            creatorId={searchedVideo.user_id}
             initialRating={searchedVideo.average_rating}
             initialCommentCount={searchedVideo.comments?.[0]?.count || 0}
             onRate={async (vidId, score) => {
                  if (!session) return setShowAuth(true);
                  await supabase.from('ratings').upsert({ user_id: session.user.id, video_id: vidId, score }, { onConflict: 'user_id, video_id' })
             }}
-            onClose={() => {
-                // Manually going back mimics clicking the Back button, 
-                // ensuring history stays in sync
-                window.history.back(); 
-            }} 
-            onUserClick={(uid) => {
-                // If user clicks profile from within searched video
-                setSearchedVideo(null);
-                navigateToProfile(uid);
-            }}
+            onClose={() => window.history.back()} 
+            // Simplified: Just pass ID, let Page.tsx handle the replace logic
+            onUserClick={(uid) => navigateToProfile(uid)}
             startMuted={false} 
           />
         </div>

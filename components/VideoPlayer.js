@@ -165,10 +165,9 @@ export default function VideoPlayer({
                 <button 
                     onClick={(e) => {
                         e.stopPropagation();
-                        // Close video then go to profile
-                        handleManualClose();
-                        // Small timeout to allow history to settle before profile nav
-                        setTimeout(() => onUserClick && onUserClick(creatorId), 100);
+                        // SIMPLE: Just fire the event. 
+                        // Parent (Page.tsx) handles the history replacement.
+                        if (onUserClick) onUserClick(creatorId);
                     }}
                     className="flex items-center gap-2 text-white/90 hover:text-blue-400 hover:scale-110 transition mb-2"
                 >
@@ -221,10 +220,8 @@ export default function VideoPlayer({
             onClose={() => setShowComments(false)} 
             isInsidePlayer={true} 
             onCommentAdded={() => setCommentCount(prev => prev + 1)} 
-            onUserClick={(uid) => {
-                handleManualClose();
-                setTimeout(() => onUserClick && onUserClick(uid), 100);
-            }} 
+            // SIMPLE: Just fire event
+            onUserClick={onUserClick} 
           />
         </div>
       )}

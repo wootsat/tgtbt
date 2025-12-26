@@ -422,11 +422,13 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
             initialCommentCount={activeVideo.comments?.[0]?.count || 0}
             onRate={handleRate}
             onClose={() => setActiveVideo(null)} 
-
+            
+            // --- SIMPLE HANDOFF ---
             onUserClick={(id) => {
-              setActiveVideo(null); // 1. Close the video modal
-              onUserClick(id);      // 2. actually navigate to the new user
-          }}
+                setActiveVideo(null); // Close the local modal
+                onUserClick(id);      // Pass ID up to Page.tsx
+            }}
+            // ----------------------
 
             startMuted={false} 
           />
