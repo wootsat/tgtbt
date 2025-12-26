@@ -221,7 +221,7 @@ export default function Feed({ onUserClick, onAuthRequired }) {
           </button>
           <span className="text-gray-700">|</span>
           <button onClick={() => handleTabChange('week')} className={`transition-all duration-300 flex items-center gap-1 ${currentTab === 'week' ? 'text-fuchsia-500 scale-110 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
-            WEEKLY <CalendarDays size={12} />
+            TOP WEEKLY <CalendarDays size={12} />
           </button>
         </div>
         

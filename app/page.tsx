@@ -86,7 +86,8 @@ export default function Home() {
                 setViewMode('profile')
               }
             })}
-            className={`transition h-12 w-12 flex items-center justify-center rounded-full active:bg-white/10 ${isMyProfile ? 'text-blue-400' : 'text-white'}`}
+            className={`transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-white/10 
+              ${isMyProfile ? 'text-blue-400 hover:text-blue-300' : 'text-white hover:text-blue-400'}`}
           >
             {isMyProfile ? <HomeIcon size={28} /> : <User size={28} />}
           </button>
