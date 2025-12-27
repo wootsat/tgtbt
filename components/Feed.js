@@ -23,6 +23,7 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
   // --- SWIPE SAFETY LOCK ---
   useEffect(() => {
     if (isVisible) {
+      // Wait 500ms after appearing before accepting swipes
       const timer = setTimeout(() => setCanSwipe(true), 500)
       return () => clearTimeout(timer)
     } else {
@@ -88,23 +89,21 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
 
   // --- SWIPE HANDLERS ---
   const handlers = useSwipeable({
-    onSwipedLeft: (eventData) => {
-      // STRICT CHECK: Only allow touch swipes (filters out mouse/trackpad back gestures)
-      if (eventData.pointerType !== 'touch') return; 
-      
+    onSwipedLeft: () => {
+      // Removed the strict 'pointerType' check to ensure it works on all mobile devices
       if (activeTab === 'new') onTabChange('day')
       else if (activeTab === 'day') onTabChange('week')
       else if (activeTab === 'week') onTabChange('new') 
     },
-    onSwipedRight: (eventData) => {
-      if (eventData.pointerType !== 'touch') return;
-
+    onSwipedRight: () => {
       if (activeTab === 'week') onTabChange('day')
       else if (activeTab === 'day') onTabChange('new')
       else if (activeTab === 'new') onTabChange('week') 
     },
-    trackMouse: false,
-    trackTouch: true
+    trackMouse: false, // Prevents desktop "ghost swipes"
+    trackTouch: true,  // Ensures mobile works
+    delta: 10,         // Swipe threshold
+    swipeDuration: 500
   })
 
   const handleScroll = (e) => {
@@ -171,7 +170,6 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
       )}
       
       <div className="mb-6 text-center space-y-4">
-        {/* UPDATED TITLE TEXT */}
         <h2 className="text-3xl font-black text-white italic tracking-tighter uppercase animate-in fade-in slide-in-from-top-4 duration-500">
           {activeTab === 'new' ? 'NEW TGTBTs' : activeTab === 'day' ? 'HOT FRESH' : 'TOP WEEKLY'}
         </h2>
@@ -185,13 +183,12 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
              HOT FRESH <Flame size={12} />
           </button>
           <span className="text-gray-700">|</span>
-          
-          {/* UPDATED BUTTON TEXT */}
           <button onClick={() => onTabChange('week')} className={`transition-all duration-300 flex items-center gap-1 ${activeTab === 'week' ? 'text-fuchsia-500 scale-110 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
             TOP WEEKLY <CalendarDays size={12} />
           </button>
         </div>
         
+        {/* Only visible on mobile/touch screens */}
         <p className="text-gray-500 text-[10px] uppercase tracking-widest animate-pulse md:hidden mt-2">
            Swipe Left / Right to switch
         </p>
