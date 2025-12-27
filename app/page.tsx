@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { LogOut, PlusCircle, X, User, Home as HomeIcon, LogIn, Search } from 'lucide-react'
+import { LogOut, PlusCircle, X, User, Home as HomeIcon, LogIn, Search, Loader2 } from 'lucide-react'
 
 import UploadVideo from '@/components/UploadVideo'
 import UserProfile from '@/components/UserProfile'
@@ -13,6 +13,7 @@ import VideoPlayer from '@/components/VideoPlayer'
 export default function Home() {
   const [session, setSession] = useState(null)
   
+  // View State
   const [showUpload, setShowUpload] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
   const [showSearch, setShowSearch] = useState(false) 
@@ -20,6 +21,28 @@ export default function Home() {
   const [targetProfileId, setTargetProfileId] = useState(null)
   const [searchedVideo, setSearchedVideo] = useState(null) 
   const [feedKey, setFeedKey] = useState(0)
+
+  // --- PERSISTENT FEED TAB ---
+  const [feedTab, setFeedTab] = useState('day') 
+  
+  // NEW: Wait for storage check before rendering Feed
+  const [isInitialized, setIsInitialized] = useState(false)
+
+  // Initialize from Session Storage on mount
+  useEffect(() => {
+    const savedTab = sessionStorage.getItem('tgtbt_active_tab')
+    if (savedTab) {
+      setFeedTab(savedTab)
+    }
+    // Mark initialization as done so we can render
+    setIsInitialized(true)
+  }, [])
+
+  const handleTabChange = (newTab) => {
+    setFeedTab(newTab)
+    sessionStorage.setItem('tgtbt_active_tab', newTab)
+  }
+  // ---------------------------------------------
 
   // 1. Session Check
   useEffect(() => {
@@ -77,7 +100,6 @@ export default function Home() {
     setTargetProfileId(userId);
     setViewMode('profile');
     
-    // REPLACE history if watching video, otherwise PUSH
     if (window.history.state?.videoOpen || window.history.state?.modal === 'video') {
         window.history.replaceState({ view: 'profile', profileId: userId }, '', `?u=${userId}`);
     } else {
@@ -87,24 +109,27 @@ export default function Home() {
     if (searchedVideo) setSearchedVideo(null);
   }
 
-  const navigateToFeed = () => {
-    if (viewMode === 'feed') {
+  const navigateToFeed = (forceRefresh = false) => {
+    if (viewMode === 'feed' && !forceRefresh) return;
+
+    if (forceRefresh) {
         setFeedKey(prev => prev + 1);
-        return;
     }
+
     setViewMode('feed');
     setTargetProfileId(null);
     setShowUpload(false);
     setShowAuth(false);
     setShowSearch(false);
+    
     window.history.pushState({ view: 'feed' }, '', window.location.pathname);
-    setFeedKey(prev => prev + 1);
   }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setSession(null)
-    navigateToFeed()
+    sessionStorage.removeItem('tgtbt_active_tab') 
+    navigateToFeed(true)
     window.location.reload()
   }
 
@@ -118,12 +143,19 @@ export default function Home() {
 
   const isMyProfile = viewMode === 'profile' && session && targetProfileId === session.user.id
 
+  // --- LOADING STATE (Prevent wrong tab fetch) ---
+  if (!isInitialized) {
+    return <div className="min-h-screen bg-black flex items-center justify-center text-white">
+        <Loader2 className="animate-spin text-blue-500" size={40} />
+    </div>
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center bg-black text-white overflow-hidden relative">
       
       {/* --- NAVBAR --- */}
       <div className="w-full max-w-2xl p-4 flex justify-between items-center z-50 absolute top-0 bg-gradient-to-b from-black/90 to-transparent">
-        <button onClick={navigateToFeed} className="hover:opacity-80 transition hover:scale-105 active:scale-95">
+        <button onClick={() => navigateToFeed(true)} className="hover:opacity-80 transition hover:scale-105 active:scale-95">
           <img src="/tgtbt_logo.png" alt="TGTBT" className="h-24 w-auto object-contain" />
         </button>
         
@@ -134,7 +166,7 @@ export default function Home() {
 
           <button 
             onClick={() => requireAuth(() => {
-              if (isMyProfile) navigateToFeed()
+              if (isMyProfile) navigateToFeed(false)
               else navigateToProfile(session.user.id)
             })}
             className={`transition transform hover:scale-110 h-12 w-12 flex items-center justify-center rounded-full active:bg-white/10 
@@ -162,22 +194,23 @@ export default function Home() {
       {/* --- CONTENT AREA --- */}
       <div className="flex-1 w-full max-w-2xl h-[100dvh] relative bg-gray-900">
         
-        {viewMode === 'feed' && (
-           <div className="h-full">
+        <div className={`h-full ${viewMode === 'feed' ? 'block' : 'hidden'}`}>
              <Feed 
                key={feedKey} 
+               activeTab={feedTab}
+               onTabChange={handleTabChange} 
                onAuthRequired={() => setShowAuth(true)}
                onUserClick={(userId) => navigateToProfile(userId)} 
+               isVisible={viewMode === 'feed'} 
              />
-           </div>
-        )}
+        </div>
 
         {viewMode === 'profile' && (
            <div className="pt-28 h-full">
              <UserProfile 
                 session={session} 
                 targetUserId={targetProfileId} 
-                onBack={navigateToFeed} 
+                onBack={() => navigateToFeed(false)} 
                 onUserClick={(id) => navigateToProfile(id)} 
              />
            </div>
@@ -201,10 +234,8 @@ export default function Home() {
         )}
       </div>
 
-      {/* --- FULL SCREEN OVERLAYS (Use FIXED to prevent scrolling issues) --- */}
-      
+      {/* --- FULL SCREEN OVERLAYS --- */}
       {searchedVideo && (
-        // FIX: Changed from absolute to fixed inset-0
         <div className="fixed inset-0 z-[100] bg-black">
           <VideoPlayer 
             videoSrc={searchedVideo.compressed_url || searchedVideo.video_url} 
@@ -226,7 +257,6 @@ export default function Home() {
       )}
 
       {showUpload && (
-        // FIX: Changed from absolute to fixed inset-0
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-lg relative">
             <button onClick={() => setShowUpload(false)} className="absolute -top-12 right-0 text-gray-400 hover:text-white"><X size={32} /></button>
@@ -239,7 +269,6 @@ export default function Home() {
       )}
 
       {showAuth && (
-        // FIX: Changed from absolute to fixed inset-0
         <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
            <Auth onClose={() => setShowAuth(false)} />
         </div>
