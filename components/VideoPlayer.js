@@ -20,7 +20,8 @@ export default function VideoPlayer({
   startMuted = true, 
   showHomeButton = false 
 }) {
-  const videoRef = useRef(null)
+  const videoRef = useRef(null) // Main reference for single video mode
+  const tileRefs = useRef([]) // Array of refs for tiled mode
   const audioRef = useRef(null)
   
   const [rating, setRating] = useState(initialRating || 0)
@@ -28,14 +29,32 @@ export default function VideoPlayer({
   const [hoverRating, setHoverRating] = useState(0)
   const [showControls, setShowControls] = useState(false)
   const [showComments, setShowComments] = useState(false) 
-  
-  // Initialize state from prop
   const [isMuted, setIsMuted] = useState(startMuted)
-  
   const [commentCount, setCommentCount] = useState(initialCommentCount)
   const [isFavorited, setIsFavorited] = useState(false)
+  
+  // New state for smooth loading
+  const [isLoaded, setIsLoaded] = useState(false)
 
   const isImage = videoSrc?.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null
+
+  // --- ATTEMPT AUTOPLAY UNMUTE ---
+  useEffect(() => {
+    if (!startMuted) {
+        const attemptPlay = async () => {
+            try {
+                if (audioRef.current) await audioRef.current.play()
+                if (videoRef.current) await videoRef.current.play()
+                // Try playing tiles if they exist
+                tileRefs.current.forEach(v => { if (v) v.play() })
+            } catch (err) {
+                console.log("Autoplay blocked. Reverting to muted.")
+                setIsMuted(true) 
+            }
+        }
+        attemptPlay()
+    }
+  }, [startMuted])
 
   // --- HISTORY LOGIC ---
   useEffect(() => {
@@ -65,8 +84,7 @@ export default function VideoPlayer({
     const initPlayer = async () => {
       if (!videoId) return
       const { error } = await supabase.rpc('increment_view_count', { video_id: videoId })
-      if (error) console.error("Error incrementing view:", error)
-
+      
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data } = await supabase
@@ -81,23 +99,24 @@ export default function VideoPlayer({
     initPlayer()
   }, [videoId])
 
-  // --- MUTE TOGGLE HANDLER ---
   const toggleMute = (e) => {
     e.stopPropagation()
     const newState = !isMuted
     setIsMuted(newState)
     
-    // Force Audio to Play if unmuting (fixes browser autoplay blocks)
     if (!newState) {
-        if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio play blocked", e))
-        if (videoRef.current) videoRef.current.play().catch(e => console.log("Video play blocked", e))
+        // Play audio track if exists
+        if (audioRef.current) audioRef.current.play().catch(e => {})
         
-        // Also force play on all tiled videos
-        const allVideos = document.querySelectorAll('.tiled-video')
-        allVideos.forEach(v => v.play().catch(e => {}))
+        // Play single video if exists
+        if (videoRef.current) videoRef.current.play().catch(e => {})
+        
+        // Play all tiles
+        tileRefs.current.forEach(v => {
+            if (v) v.play().catch(e => {})
+        })
     }
   }
-  // ---------------------------
 
   const toggleFavorite = async (e) => {
     e.stopPropagation()
@@ -134,6 +153,21 @@ export default function VideoPlayer({
     }
   }
 
+  // --- SYNC HANDLER FOR TILES ---
+  const handleTileReady = () => {
+    // When the first video is ready, we treat the grid as ready.
+    // We force all tiles to the same time and play them.
+    if (!isLoaded) {
+        setIsLoaded(true)
+        tileRefs.current.forEach(v => {
+            if (v) {
+                v.currentTime = 0
+                v.play().catch(e => {})
+            }
+        })
+    }
+  }
+
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden" onClick={handleVideoClick}>
       
@@ -158,20 +192,26 @@ export default function VideoPlayer({
                style={{ backgroundImage: `url(${videoSrc})` }} 
             />
          ) : (
-            // TILED VIDEO
-            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 w-[120%] h-[120%] -ml-[10%] -mt-[10%]">
+            // TILED VIDEO (Optimized)
+            <div className={`absolute inset-0 grid grid-cols-3 grid-rows-3 w-[120%] h-[120%] -ml-[10%] -mt-[10%] transition-opacity duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
                {[...Array(9)].map((_, i) => (
                   <video 
                     key={i}
+                    ref={el => tileRefs.current[i] = el}
                     src={videoSrc}
                     className="w-full h-full object-cover tiled-video"
-                    autoPlay 
-                    loop 
-                    muted={isMuted} // Controlled by State
                     playsInline 
+                    loop 
+                    // AUDIO LOGIC: 
+                    // 1. If external audio exists, ALL videos are muted.
+                    // 2. If no external audio, ONLY index 0 plays sound (controlled by isMuted).
+                    // 3. All others (index > 0) are always muted.
+                    muted={audioSrc ? true : (i === 0 ? isMuted : true)}
+                    
+                    // SYNC LOGIC: Only the first video drives the loading state
+                    onCanPlay={i === 0 ? handleTileReady : undefined}
                   />
                ))}
-               <video ref={videoRef} src={videoSrc} className="hidden" />
             </div>
          )
       ) : (
@@ -185,13 +225,12 @@ export default function VideoPlayer({
                 loop 
                 playsInline 
                 autoPlay 
-                muted={isMuted} // Controlled by State
+                muted={isMuted} 
             />
          )
       )}
 
-      {/* EXTERNAL AUDIO TRACK */}
-      {/* Important: muted attribute must be bound to isMuted state, not the prop */}
+      {/* EXTERNAL AUDIO */}
       {audioSrc && (
           <audio 
             ref={audioRef} 
@@ -240,7 +279,6 @@ export default function VideoPlayer({
 
             <div className="flex items-center gap-6 mt-2">
               
-              {/* Mute Button logic */}
               {(!isImage || audioSrc) && (
                   <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                     {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
