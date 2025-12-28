@@ -142,10 +142,10 @@ export default function VideoPlayer({
       {isTiled ? (
          isImage ? (
             // TILED IMAGE
-            // Mobile: bg-[length:50%] (Forces 2 tiles wide)
+            // Mobile: bg-[length:75%] (Larger tiles)
             // Desktop: md:bg-auto (Uses real image size)
             <div 
-               className="absolute inset-0 w-full h-full bg-repeat bg-[length:50%] md:bg-auto bg-center"
+               className="absolute inset-0 w-full h-full bg-repeat bg-[length:75%] md:bg-auto bg-center"
                style={{ backgroundImage: `url(${videoSrc})` }} 
             />
          ) : (
