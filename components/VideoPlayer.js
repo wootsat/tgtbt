@@ -15,15 +15,15 @@ export default function VideoPlayer({
   isTiled = false, 
   initialRating, 
   initialCommentCount = 0, 
-  onRate, 
-  onClose, 
+  onRate, // Optional now
+  onClose, // Optional now
   onUserClick,
   startMuted = true, 
   showHomeButton = false 
 }) {
-  const router = useRouter() // Initialize router
-  const videoRef = useRef(null) // Main reference for single video mode
-  const tileRefs = useRef([]) // Array of refs for tiled mode
+  const router = useRouter()
+  const videoRef = useRef(null)
+  const tileRefs = useRef([])
   const audioRef = useRef(null)
   
   const [rating, setRating] = useState(initialRating || 0)
@@ -35,19 +35,17 @@ export default function VideoPlayer({
   const [commentCount, setCommentCount] = useState(initialCommentCount)
   const [isFavorited, setIsFavorited] = useState(false)
   
-  // New state for smooth loading
   const [isLoaded, setIsLoaded] = useState(false)
 
   const isImage = videoSrc?.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null
 
-  // --- ATTEMPT AUTOPLAY UNMUTE ---
+  // --- ATTEMPT AUTOPLAY ---
   useEffect(() => {
     if (!startMuted) {
         const attemptPlay = async () => {
             try {
                 if (audioRef.current) await audioRef.current.play()
                 if (videoRef.current) await videoRef.current.play()
-                // Try playing tiles if they exist
                 tileRefs.current.forEach(v => { if (v) v.play() })
             } catch (err) {
                 console.log("Autoplay blocked. Reverting to muted.")
@@ -67,27 +65,42 @@ export default function VideoPlayer({
 
     const handlePopState = (event) => {
       event.preventDefault();
-      handleManualClose(); // Use the safe handler
+      handleManualClose(); 
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // --- UPDATED CLOSE LOGIC ---
+  // --- CLOSE LOGIC ---
   const handleManualClose = () => {
-    // If we have history state, go back
     if (window.history.state?.videoOpen) {
        window.history.back();
-    } 
-    // If onClose is provided (Modal Mode), call it
-    else if (onClose && typeof onClose === 'function') {
+    } else if (onClose && typeof onClose === 'function') {
        onClose(); 
-    } 
-    // If no onClose provided (Page Mode / Server Component), force redirect home
-    else {
+    } else {
        router.push('/');
     }
+  }
+
+  // --- RATE LOGIC (Self-Contained) ---
+  const handleRate = async (score) => {
+    setUserRating(score)
+    
+    // If a parent handler exists, use it
+    if (onRate && typeof onRate === 'function') {
+        onRate(videoId, score)
+        return
+    }
+
+    // Otherwise, handle it internally (Client-Side)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return alert('Login to rate!')
+    
+    await supabase.from('ratings').upsert(
+        { user_id: user.id, video_id: videoId, score }, 
+        { onConflict: 'user_id, video_id' }
+    )
   }
 
   useEffect(() => {
@@ -113,18 +126,10 @@ export default function VideoPlayer({
     e.stopPropagation()
     const newState = !isMuted
     setIsMuted(newState)
-    
     if (!newState) {
-        // Play audio track if exists
         if (audioRef.current) audioRef.current.play().catch(e => {})
-        
-        // Play single video if exists
         if (videoRef.current) videoRef.current.play().catch(e => {})
-        
-        // Play all tiles
-        tileRefs.current.forEach(v => {
-            if (v) v.play().catch(e => {})
-        })
+        tileRefs.current.forEach(v => { if (v) v.play().catch(e => {}) })
     }
   }
 
@@ -147,11 +152,6 @@ export default function VideoPlayer({
     setShowControls(prev => !prev)
   }
 
-  const handleRate = (score) => {
-    setUserRating(score)
-    if (onRate) onRate(videoId, score)
-  }
-
   const handleShare = async (e) => {
     e.stopPropagation()
     const shareUrl = `https://tgtbt.xyz/watch/${videoId}`
@@ -163,10 +163,7 @@ export default function VideoPlayer({
     }
   }
 
-  // --- SYNC HANDLER FOR TILES ---
   const handleTileReady = () => {
-    // When the first video is ready, we treat the grid as ready.
-    // We force all tiles to the same time and play them.
     if (!isLoaded) {
         setIsLoaded(true)
         tileRefs.current.forEach(v => {
@@ -176,6 +173,15 @@ export default function VideoPlayer({
             }
         })
     }
+  }
+
+  // --- USER CLICK HANDLER ---
+  const handleUserClickInternal = (uid) => {
+      if (onUserClick && typeof onUserClick === 'function') {
+          onUserClick(uid)
+      } else {
+          router.push(`/?u=${uid}`)
+      }
   }
 
   return (
@@ -196,13 +202,11 @@ export default function VideoPlayer({
       {/* --- MEDIA RENDERING --- */}
       {isTiled ? (
          isImage ? (
-            // TILED IMAGE
             <div 
                className="absolute inset-0 w-full h-full bg-repeat bg-[length:75%] md:bg-auto bg-center"
                style={{ backgroundImage: `url(${videoSrc})` }} 
             />
          ) : (
-            // TILED VIDEO (Optimized)
             <div className={`absolute inset-0 grid grid-cols-3 grid-rows-3 w-[120%] h-[120%] -ml-[10%] -mt-[10%] transition-opacity duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
                {[...Array(9)].map((_, i) => (
                   <video 
@@ -234,26 +238,9 @@ export default function VideoPlayer({
          )
       )}
 
-      {/* EXTERNAL AUDIO */}
-      {audioSrc && (
-          <audio 
-            ref={audioRef} 
-            src={audioSrc} 
-            autoPlay 
-            loop 
-            muted={isMuted} 
-          />
-      )}
+      {audioSrc && <audio ref={audioRef} src={audioSrc} autoPlay loop muted={isMuted} />}
 
-      {/* WATERMARK LOGO */}
-      <img 
-        src="/tgtbt_logo.png" 
-        alt="TGTBT" 
-        className="absolute z-10 select-none opacity-50 pointer-events-none h-auto 
-                   bottom-8 right-8 w-80 
-                   landscape:w-24 landscape:bottom-4 landscape:right-4
-                   lg:landscape:w-[30rem] lg:landscape:bottom-10 lg:landscape:right-10" 
-      />
+      <img src="/tgtbt_logo.png" alt="TGTBT" className="absolute z-10 select-none opacity-50 pointer-events-none h-auto bottom-8 right-8 w-80 landscape:w-24 landscape:bottom-4 landscape:right-4 lg:landscape:w-[30rem] lg:landscape:bottom-10 lg:landscape:right-10" />
 
       {/* --- CONTROLS OVERLAY --- */}
       {!showComments && (
@@ -264,7 +251,7 @@ export default function VideoPlayer({
                 <button 
                     onClick={(e) => {
                         e.stopPropagation();
-                        if (onUserClick) onUserClick(creatorId);
+                        handleUserClickInternal(creatorId);
                     }}
                     className="flex items-center gap-2 text-white/90 hover:text-blue-400 hover:scale-110 transition mb-2"
                 >
@@ -282,21 +269,17 @@ export default function VideoPlayer({
             </div>
 
             <div className="flex items-center gap-6 mt-2">
-              
               {(!isImage || audioSrc) && (
                   <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                     {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
                   </button>
               )}
-
               <button onClick={(e) => { e.stopPropagation(); setShowComments(true); }} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full backdrop-blur-md border border-white/10 transition">
                 <MessageCircle size={20} /> <span className="text-sm font-bold">Comments ({commentCount})</span>
               </button>
-
               <button onClick={toggleFavorite} className={`transition transform hover:scale-110 ${isFavorited ? 'text-pink-500 fill-pink-500' : 'text-white/80 hover:text-white'}`}>
                 <Heart size={24} className={isFavorited ? "fill-pink-500" : ""} />
               </button>
-
               <button onClick={handleShare} className="text-white/80 hover:text-white transition transform hover:scale-110">
                 <Share2 size={24} />
               </button>
@@ -306,19 +289,13 @@ export default function VideoPlayer({
       )}
 
       {showComments && (
-        <div 
-            className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" 
-            onClick={(e) => { 
-                e.stopPropagation(); 
-                setShowComments(false); 
-            }}
-        >
+        <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={(e) => { e.stopPropagation(); setShowComments(false); }}>
           <CommentsOverlay 
             videoId={videoId} 
             onClose={() => setShowComments(false)} 
             isInsidePlayer={true} 
             onCommentAdded={() => setCommentCount(prev => prev + 1)} 
-            onUserClick={onUserClick} 
+            onUserClick={handleUserClickInternal} 
           />
         </div>
       )}
