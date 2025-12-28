@@ -2,13 +2,15 @@ import VideoPlayer from '@/components/VideoPlayer'
 import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 
+// 1. Force Dynamic Rendering
 export const dynamic = 'force-dynamic'
 
+// 2. SAFE FETCH
 async function getVideoSafe(id) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    
+
     if (!url || !key) return null
 
     const res = await fetch(`${url}/rest/v1/videos?id=eq.${id}&select=*,profiles(username),comments(count)`, {
@@ -20,68 +22,93 @@ async function getVideoSafe(id) {
     })
 
     if (!res.ok) return null
-    
     const data = await res.json()
     return data?.[0] || null
-
   } catch (error) {
-    console.error("Server Fetch Error:", error)
+    console.error("Fetch Error:", error)
     return null
   }
 }
 
-// METADATA GENERATION
+// 3. METADATA GENERATION (Strict Mode)
 export async function generateMetadata({ params }) {
   const { id } = await params
   const video = await getVideoSafe(id)
 
-  if (!video) {
-      return { 
-          title: 'Watch on TGTBT',
-          openGraph: { images: [] } // Safe empty array
-      }
+  // Default Fallback (Safe)
+  const defaultMeta = {
+    title: 'Watch on TGTBT',
+    description: 'Too Good To Be True',
+    openGraph: {
+        title: 'Watch on TGTBT',
+        images: ['https://tgtbt.xyz/tgtbt_logo.png'] // Replace with a real valid image URL from your public folder if possible
+    },
+    twitter: {
+        card: 'summary',
+        title: 'Watch on TGTBT',
+        images: ['https://tgtbt.xyz/tgtbt_logo.png']
+    }
   }
 
-  const isVideo = !video.video_url.match(/\.(jpeg|jpg|gif|png|webp)$/i)
+  if (!video || !video.video_url) return defaultMeta
+
+  // Strict Data Sanitization
   const title = video.title || 'TGTBT'
   const username = video.profiles?.username || 'User'
-  const imageUrl = video.video_url
+  const description = `Posted by @${username}`
+  const videoUrl = video.compressed_url || video.video_url
+  
+  // Ensure Image is a valid absolute URL string or fallback
+  const rawImage = video.video_url
+  const imageUrl = rawImage && rawImage.startsWith('http') ? rawImage : 'https://tgtbt.xyz/tgtbt_logo.png'
 
-  // Strict check to ensure imageUrl exists
-  const images = imageUrl ? [imageUrl] : []
+  const isVideo = !videoUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)
+
+  // OpenGraph Construction
+  const og = {
+    title: title,
+    description: description,
+    url: `https://tgtbt.xyz/watch/${id}`,
+    siteName: 'TGTBT',
+    images: [{ url: imageUrl }],
+    type: 'website' // Default to website to be safe
+  }
+
+  // Twitter Construction
+  const twitter = {
+    card: 'summary_large_image',
+    title: title,
+    description: description,
+    images: [imageUrl],
+  }
+
+  // Only add Video tags if we are 100% sure it's a video
+  if (isVideo && videoUrl) {
+      og.type = 'video.other'
+      og.videos = [{
+          url: videoUrl,
+          width: 1280,
+          height: 720,
+          type: 'video/mp4'
+      }]
+
+      twitter.card = 'player'
+      twitter.players = [{
+          url: videoUrl,
+          width: 1280,
+          height: 720,
+      }]
+  }
 
   return {
     title: `${title} | @${username}`,
-    description: 'Watch on TGTBT',
-    openGraph: {
-      title: title,
-      description: `Posted by @${username}`,
-      url: `https://tgtbt.xyz/watch/${id}`,
-      type: 'video.other',
-      // Strict undefined checks for arrays
-      videos: isVideo ? [{
-        url: video.compressed_url || video.video_url,
-        width: 1280,
-        height: 720,
-        type: 'video/mp4'
-      }] : undefined,
-      images: images,
-    },
-    twitter: {
-      card: isVideo ? 'player' : 'summary_large_image',
-      title: title,
-      description: `By @${username}`,
-      images: images,
-      players: isVideo ? [{
-        url: video.compressed_url || video.video_url,
-        width: 1280,
-        height: 720,
-      }] : undefined,
-    }
+    description: description,
+    openGraph: og,
+    twitter: twitter
   }
 }
 
-// MAIN PAGE COMPONENT
+// 4. MAIN PAGE
 export default async function WatchPage({ params }) {
   const { id } = await params
   const video = await getVideoSafe(id)
@@ -101,21 +128,16 @@ export default async function WatchPage({ params }) {
   return (
     <main className="fixed inset-0 bg-black z-50">
       <VideoPlayer 
-        // Pass Only Serializable Data (Strings, Numbers, Booleans)
         videoSrc={video.compressed_url || video.video_url} 
         videoId={video.id}
         audioSrc={video.audio_url}
         isTiled={video.is_tiled}
-        
         creatorUsername={video.profiles?.username}
         creatorId={video.user_id}
-        
         initialRating={video.average_rating}
         initialCommentCount={video.comments?.[0]?.count || 0}
         
-        // NO FUNCTIONS PASSED HERE (Fixes the crash)
-        // VideoPlayer handles logic internally now.
-        
+        // Pass Only Primitives
         startMuted={false} 
         showHomeButton={true} 
       />
