@@ -1,17 +1,32 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import VideoPlayer from '@/components/VideoPlayer'
-import { Play } from 'lucide-react'
+import { Play, Loader2, AlertCircle } from 'lucide-react'
 
-export default function WatchClient({ initialVideo }) {
+export default function WatchClient({ videoId }) {
   const router = useRouter()
+  const [video, setVideo] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [hasInteracted, setHasInteracted] = useState(false)
-  const [video] = useState(initialVideo)
 
-  // Fallback if something went wrong with the server data
-  if (!video) return <div className="text-white text-center pt-20">Video not found.</div>
+  // --- FETCH DATA ON CLIENT (Reliable) ---
+  useEffect(() => {
+    const fetchVideo = async () => {
+      const { data, error } = await supabase
+        .from('videos')
+        .select('*, profiles(username), comments(count)')
+        .eq('id', videoId)
+        .single()
+
+      if (data) setVideo(data)
+      else console.error(error)
+      
+      setLoading(false)
+    }
+    fetchVideo()
+  }, [videoId])
 
   const handleRate = async (vidId, score) => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -19,6 +34,26 @@ export default function WatchClient({ initialVideo }) {
     await supabase.from('ratings').upsert(
         { user_id: user.id, video_id: vidId, score }, 
         { onConflict: 'user_id, video_id' }
+    )
+  }
+
+  // --- LOADING STATE ---
+  if (loading) {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-black text-white">
+            <Loader2 className="animate-spin text-blue-500" size={40} />
+        </div>
+    )
+  }
+
+  // --- ERROR STATE ---
+  if (!video) {
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-4">
+            <AlertCircle className="text-red-500" size={48} />
+            <p>Video not found.</p>
+            <button onClick={() => router.push('/')} className="text-blue-400 hover:underline">Go Home</button>
+        </div>
     )
   }
 

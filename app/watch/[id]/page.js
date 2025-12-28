@@ -1,10 +1,11 @@
 import { supabase } from '@/lib/supabaseClient'
 import WatchClient from '@/components/WatchClient'
 
-// This function tells Telegram/Discord what to show in the chat preview
+// This generates the Preview Card for Telegram/Discord
 export async function generateMetadata({ params }) {
-  const { id } = params
+  const { id } = await params // Await params for safety
   
+  // Attempt to fetch video details for the preview card
   const { data: video } = await supabase
     .from('videos')
     .select('*, profiles(username)')
@@ -12,9 +13,7 @@ export async function generateMetadata({ params }) {
     .single()
 
   if (!video) {
-    return {
-      title: 'Video Not Found - TGTBT',
-    }
+    return { title: 'TGTBT' }
   }
 
   const isVideo = !video.video_url.match(/\.(jpeg|jpg|gif|png|webp)$/i)
@@ -27,48 +26,33 @@ export async function generateMetadata({ params }) {
       description: `Posted by @${video.profiles?.username}`,
       type: 'video.other',
       url: `https://tgtbt.xyz/watch/${id}`,
-      // Telegram looks for these specific video tags:
-      videos: isVideo ? [
-        {
-          url: video.compressed_url || video.video_url, // Direct link to MP4
-          width: 1280,
+      videos: isVideo ? [{
+          url: video.compressed_url || video.video_url,
+          width: 1280, 
           height: 720,
           type: 'video/mp4',
-        }
-      ] : undefined,
-      images: [
-        {
-          url: video.video_url, // For images or video thumbnail
-        }
-      ],
+      }] : undefined,
+      images: [{ url: video.video_url }],
     },
-    // Twitter Card support (used by Discord/Slack sometimes)
     twitter: {
       card: isVideo ? 'player' : 'summary_large_image',
       title: video.title,
       description: `By @${video.profiles?.username}`,
       images: [video.video_url],
-      players: isVideo ? [
-        {
+      players: isVideo ? [{
           url: video.compressed_url || video.video_url,
           width: 1280,
           height: 720,
-        }
-      ] : undefined,
+      }] : undefined,
     }
   }
 }
 
+// The Page Component
 export default async function WatchPage({ params }) {
-  const { id } = params
-
-  // Fetch data on the server to pass to the client
-  // (Faster than fetching on the client!)
-  const { data: video } = await supabase
-    .from('videos')
-    .select('*, profiles(username), comments(count)')
-    .eq('id', id)
-    .single()
-
-  return <WatchClient initialVideo={video} />
+  const { id } = await params // Await params
+  
+  // We just pass the ID to the client. 
+  // The Client Component will fetch the video data itself, ensuring it works reliably.
+  return <WatchClient videoId={id} />
 }
