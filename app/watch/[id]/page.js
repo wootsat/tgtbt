@@ -35,58 +35,64 @@ export async function generateMetadata({ params }) {
   const { id } = await params
   const video = await getVideoSafe(id)
 
-  // Default Fallback (Safe)
-  const defaultMeta = {
-    title: 'Watch on TGTBT',
-    description: 'Too Good To Be True',
-    openGraph: {
-        title: 'Watch on TGTBT',
-        images: ['https://tgtbt.xyz/tgtbt_logo.png'] // Replace with a real valid image URL from your public folder if possible
-    },
-    twitter: {
+  // -- CONSTANTS --
+  // Use a reliable public image as fallback (e.g., your logo)
+  const FALLBACK_IMAGE = 'https://tgtbt.xyz/tgtbt_logo.png' 
+  
+  // -- DEFAULTS --
+  if (!video || !video.video_url) {
+    return {
+      title: 'Watch on TGTBT',
+      description: 'Too Good To Be True',
+      openGraph: {
+        images: [FALLBACK_IMAGE]
+      },
+      twitter: {
         card: 'summary',
-        title: 'Watch on TGTBT',
-        images: ['https://tgtbt.xyz/tgtbt_logo.png']
+        images: [FALLBACK_IMAGE]
+      }
     }
   }
 
-  if (!video || !video.video_url) return defaultMeta
-
-  // Strict Data Sanitization
+  // -- DATA PREP --
   const title = video.title || 'TGTBT'
   const username = video.profiles?.username || 'User'
   const description = `Posted by @${username}`
-  const videoUrl = video.compressed_url || video.video_url
   
-  // Ensure Image is a valid absolute URL string or fallback
-  const rawImage = video.video_url
-  const imageUrl = rawImage && rawImage.startsWith('http') ? rawImage : 'https://tgtbt.xyz/tgtbt_logo.png'
+  // Sanitize URLs
+  const rawVideoUrl = video.compressed_url || video.video_url || ''
+  const rawImage = video.video_url || ''
+  
+  // Ensure valid image URL (must start with http)
+  const imageUrl = rawImage.startsWith('http') ? rawImage : FALLBACK_IMAGE
+  
+  // Detect Video
+  const isVideo = !rawVideoUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) && rawVideoUrl.startsWith('http')
 
-  const isVideo = !videoUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)
-
-  // OpenGraph Construction
+  // -- CONSTRUCT OBJECTS --
+  // 1. OpenGraph
   const og = {
     title: title,
     description: description,
     url: `https://tgtbt.xyz/watch/${id}`,
     siteName: 'TGTBT',
     images: [{ url: imageUrl }],
-    type: 'website' // Default to website to be safe
+    type: 'website'
   }
 
-  // Twitter Construction
+  // 2. Twitter
   const twitter = {
     card: 'summary_large_image',
     title: title,
     description: description,
-    images: [imageUrl],
+    images: [imageUrl], // Must be an array
   }
 
-  // Only add Video tags if we are 100% sure it's a video
-  if (isVideo && videoUrl) {
+  // -- ADD VIDEO TAGS ONLY IF VALID --
+  if (isVideo) {
       og.type = 'video.other'
       og.videos = [{
-          url: videoUrl,
+          url: rawVideoUrl,
           width: 1280,
           height: 720,
           type: 'video/mp4'
@@ -94,7 +100,7 @@ export async function generateMetadata({ params }) {
 
       twitter.card = 'player'
       twitter.players = [{
-          url: videoUrl,
+          url: rawVideoUrl,
           width: 1280,
           height: 720,
       }]
@@ -137,7 +143,7 @@ export default async function WatchPage({ params }) {
         initialRating={video.average_rating}
         initialCommentCount={video.comments?.[0]?.count || 0}
         
-        // Pass Only Primitives
+        // Pass Only Primitives (No Functions!)
         startMuted={false} 
         showHomeButton={true} 
       />
