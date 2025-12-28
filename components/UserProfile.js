@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { ArrowLeft, UserCheck, Heart, PlayCircle, Share2, Video, Users, Eye, MessageCircle, Star, ArrowUpDown } from 'lucide-react'
+import { ArrowLeft, UserCheck, Heart, PlayCircle, Share2, Video, Users, Eye, MessageCircle, Star, ArrowUpDown, Trash2, Loader2 } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
 
 export default function UserProfile({ session, targetUserId, onBack, onUserClick }) {
@@ -11,9 +11,9 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
   const [activeVideo, setActiveVideo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isFollowing, setIsFollowing] = useState(false)
-  
-  // NEW: Sorting State
-  const [sortBy, setSortBy] = useState('date') // 'date' or 'rating'
+  const [sortBy, setSortBy] = useState('date') 
+
+  const isMyProfile = session?.user?.id === targetUserId
 
   useEffect(() => {
     fetchProfile()
@@ -22,7 +22,7 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
 
   useEffect(() => {
     fetchData()
-  }, [targetUserId, activeTab, sortBy]) // Re-fetch when sort changes
+  }, [targetUserId, activeTab, sortBy]) 
 
   const fetchProfile = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('id', targetUserId).single()
@@ -50,6 +50,21 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     }
   }
 
+  const handleDelete = async (e, videoId) => {
+    e.stopPropagation()
+    if (!confirm("Are you sure you want to delete this video?")) return
+
+    const { error } = await supabase.from('videos').delete().eq('id', videoId)
+    
+    if (error) {
+        alert("Error deleting video")
+        console.error(error)
+    } else {
+        // Remove from local state immediately
+        setItems(prev => prev.filter(item => item.id !== videoId))
+    }
+  }
+
   const fetchData = async () => {
     setItems([])
     setLoading(true)
@@ -63,7 +78,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
         .select('*, comments(count)')
         .eq('user_id', targetUserId)
 
-      // Apply Sort
       if (sortBy === 'date') {
         query = query.order('created_at', { ascending: false })
       } else {
@@ -79,14 +93,9 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
         .from('video_favorites')
         .select('videos(*, profiles(username), comments(count))')
         .eq('user_id', targetUserId)
-        // Note: For favorites, we usually sort by when it was favorited (created_at of the favorite),
-        // but if the user wants to sort their favorites by rating, we do it in memory below.
         .order('created_at', { ascending: false })
       
-      // Extract video objects
       let extracted = favorites?.map(f => f.videos) || []
-      
-      // Client-side sort for favorites (since the rating is on the joined table)
       if (sortBy === 'rating') {
          extracted.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
       }
@@ -144,7 +153,7 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
             <p className="text-gray-400 text-sm mt-1">Joined {new Date(profile?.created_at || Date.now()).toLocaleDateString()}</p>
         </div>
         
-        {session && session.user.id !== targetUserId && (
+        {session && !isMyProfile && (
            <button 
              onClick={toggleFollow}
              className={`flex items-center gap-2 px-6 py-2 rounded-full font-bold transition transform active:scale-95 ${isFollowing ? 'bg-gray-700 text-white hover:bg-red-900' : 'bg-blue-600 text-white hover:bg-blue-500'}`}
@@ -176,7 +185,7 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
         </button>
       </div>
 
-      {/* Sorting Controls (Only for Video Lists) */}
+      {/* Sorting */}
       {(activeTab === 'posts' || activeTab === 'fav_videos') && (
         <div className="flex justify-end px-4 py-2 bg-gray-900/50">
             <button 
@@ -192,7 +201,7 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       {/* List Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black">
         {loading ? (
-            <div className="text-center text-gray-500 mt-10 animate-pulse">Loading...</div>
+            <div className="flex justify-center pt-10"><Loader2 className="animate-spin text-gray-500" /></div>
         ) : items.length === 0 ? (
             <div className="text-center text-gray-500 mt-10">Nothing to show here.</div>
         ) : (
@@ -201,7 +210,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
               {(activeTab === 'posts' || activeTab === 'fav_videos') && items.map((video, index) => (
                 <div key={video.id} onClick={() => setActiveVideo(video)} className="cursor-pointer group relative overflow-hidden rounded-xl bg-gray-800 border border-gray-700 p-3 transition hover:scale-[1.01] hover:border-gray-500">
                   <div className="flex items-center gap-4">
-                    {/* Index / Icon */}
                     <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold text-sm ${index < 3 && sortBy === 'rating' ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-300'}`}>
                        {index + 1}
                     </div>
@@ -232,7 +240,17 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
                       </div>
                     </div>
 
-                    <PlayCircle className="text-gray-600 group-hover:text-white transition-colors" size={24} />
+                    {/* DELETE BUTTON (Only in 'posts' tab and if it's my profile) */}
+                    {activeTab === 'posts' && isMyProfile ? (
+                        <button 
+                            onClick={(e) => handleDelete(e, video.id)}
+                            className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-900/30 rounded-full transition z-10"
+                        >
+                            <Trash2 size={20} />
+                        </button>
+                    ) : (
+                        <PlayCircle className="text-gray-600 group-hover:text-white transition-colors" size={24} />
+                    )}
                   </div>
                 </div>
               ))}

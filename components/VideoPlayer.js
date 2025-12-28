@@ -134,23 +134,19 @@ export default function VideoPlayer({
 
       <button 
         onClick={handleManualClose} 
-        className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-      >
+        className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <X size={36} strokeWidth={3} />
       </button>
 
       {/* --- MEDIA RENDERING --- */}
       {isTiled ? (
          isImage ? (
-            // TILED IMAGE (UPDATED: SIZE AUTO)
+            // TILED IMAGE
+            // Mobile: bg-[length:50%] (Forces 2 tiles wide)
+            // Desktop: md:bg-auto (Uses real image size)
             <div 
-               className="absolute inset-0 w-full h-full"
-               style={{ 
-                   backgroundImage: `url(${videoSrc})`, 
-                   backgroundRepeat: 'repeat',
-                   backgroundSize: 'auto', // Use intrinsic size
-                   backgroundPosition: 'center'
-               }} 
+               className="absolute inset-0 w-full h-full bg-repeat bg-[length:50%] md:bg-auto bg-center"
+               style={{ backgroundImage: `url(${videoSrc})` }} 
             />
          ) : (
             // TILED VIDEO
