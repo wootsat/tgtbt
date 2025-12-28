@@ -28,7 +28,10 @@ export default function VideoPlayer({
   const [hoverRating, setHoverRating] = useState(0)
   const [showControls, setShowControls] = useState(false)
   const [showComments, setShowComments] = useState(false) 
+  
+  // Initialize state from prop
   const [isMuted, setIsMuted] = useState(startMuted)
+  
   const [commentCount, setCommentCount] = useState(initialCommentCount)
   const [isFavorited, setIsFavorited] = useState(false)
 
@@ -78,6 +81,24 @@ export default function VideoPlayer({
     initPlayer()
   }, [videoId])
 
+  // --- MUTE TOGGLE HANDLER ---
+  const toggleMute = (e) => {
+    e.stopPropagation()
+    const newState = !isMuted
+    setIsMuted(newState)
+    
+    // Force Audio to Play if unmuting (fixes browser autoplay blocks)
+    if (!newState) {
+        if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio play blocked", e))
+        if (videoRef.current) videoRef.current.play().catch(e => console.log("Video play blocked", e))
+        
+        // Also force play on all tiled videos
+        const allVideos = document.querySelectorAll('.tiled-video')
+        allVideos.forEach(v => v.play().catch(e => {}))
+    }
+  }
+  // ---------------------------
+
   const toggleFavorite = async (e) => {
     e.stopPropagation()
     const { data: { user } } = await supabase.auth.getUser()
@@ -100,16 +121,6 @@ export default function VideoPlayer({
   const handleRate = (score) => {
     setUserRating(score)
     onRate(videoId, score)
-  }
-
-  const toggleMute = (e) => {
-    e.stopPropagation()
-    const newState = !isMuted
-    setIsMuted(newState)
-    if (audioSrc && audioRef.current) audioRef.current.muted = newState
-    const allVideos = document.querySelectorAll('.tiled-video')
-    allVideos.forEach(v => v.muted = newState)
-    if (videoRef.current) videoRef.current.muted = newState
   }
 
   const handleShare = async (e) => {
@@ -156,7 +167,7 @@ export default function VideoPlayer({
                     className="w-full h-full object-cover tiled-video"
                     autoPlay 
                     loop 
-                    muted={isMuted} 
+                    muted={isMuted} // Controlled by State
                     playsInline 
                   />
                ))}
@@ -167,11 +178,29 @@ export default function VideoPlayer({
          isImage ? (
             <img src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" />
          ) : (
-            <video ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" loop playsInline autoPlay muted={startMuted} />
+            <video 
+                ref={videoRef} 
+                src={videoSrc} 
+                className="max-h-full max-w-full w-auto h-auto object-contain" 
+                loop 
+                playsInline 
+                autoPlay 
+                muted={isMuted} // Controlled by State
+            />
          )
       )}
 
-      {audioSrc && <audio ref={audioRef} src={audioSrc} autoPlay loop muted={startMuted} />}
+      {/* EXTERNAL AUDIO TRACK */}
+      {/* Important: muted attribute must be bound to isMuted state, not the prop */}
+      {audioSrc && (
+          <audio 
+            ref={audioRef} 
+            src={audioSrc} 
+            autoPlay 
+            loop 
+            muted={isMuted} 
+          />
+      )}
 
       {/* WATERMARK LOGO */}
       <img 
@@ -211,7 +240,7 @@ export default function VideoPlayer({
 
             <div className="flex items-center gap-6 mt-2">
               
-              {/* FIXED: Show mute if it's a Video OR if there's an Audio Track */}
+              {/* Mute Button logic */}
               {(!isImage || audioSrc) && (
                   <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                     {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
