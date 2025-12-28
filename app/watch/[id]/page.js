@@ -1,19 +1,42 @@
-import { supabase } from '@/lib/supabaseClient'
 import WatchClient from '@/components/WatchClient'
 
-// This generates the Preview Card for Telegram/Discord
+// Helper to fetch video data without using the Supabase Client SDK (which crashes server-side)
+async function fetchVideoData(id) {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    
+    // Direct REST API call to Supabase (Safer for Server Components)
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/videos?id=eq.${id}&select=*,profiles(username),comments(count)`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        cache: 'no-store' // Ensure fresh data
+      }
+    )
+    
+    const data = await response.json()
+    return data && data.length > 0 ? data[0] : null
+  } catch (e) {
+    console.error("Metadata fetch error:", e)
+    return null
+  }
+}
+
 export async function generateMetadata({ params }) {
-  const { id } = await params // Await params for safety
-  
-  // Attempt to fetch video details for the preview card
-  const { data: video } = await supabase
-    .from('videos')
-    .select('*, profiles(username)')
-    .eq('id', id)
-    .single()
+  // Handle async params (Next.js 15+ safety)
+  const resolvedParams = await params
+  const id = resolvedParams?.id
+
+  if (!id) return { title: 'TGTBT' }
+
+  const video = await fetchVideoData(id)
 
   if (!video) {
-    return { title: 'TGTBT' }
+    return { title: 'Video Not Found - TGTBT' }
   }
 
   const isVideo = !video.video_url.match(/\.(jpeg|jpg|gif|png|webp)$/i)
@@ -48,11 +71,7 @@ export async function generateMetadata({ params }) {
   }
 }
 
-// The Page Component
 export default async function WatchPage({ params }) {
-  const { id } = await params // Await params
-  
-  // We just pass the ID to the client. 
-  // The Client Component will fetch the video data itself, ensuring it works reliably.
-  return <WatchClient videoId={id} />
+  const resolvedParams = await params
+  return <WatchClient videoId={resolvedParams.id} />
 }
