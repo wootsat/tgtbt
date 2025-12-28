@@ -2,43 +2,64 @@ import VideoPlayer from '@/components/VideoPlayer'
 import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 
-// 1. Force Dynamic (Prevents caching old errors)
+// 1. Force Dynamic Rendering (Critical for dynamic IDs)
 export const dynamic = 'force-dynamic'
 
-// 2. SHARED FETCH FUNCTION (Safe for Server)
-// This uses a raw web request instead of the Supabase SDK to avoid crashes
-async function getVideo(id) {
+// 2. HELPER: Safe Data Fetching
+// This wraps the fetch in a try/catch so it NEVER crashes the server
+async function getVideoSafe(id) {
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    if (!url || !key) return null
+    // Debug Log: Check server logs to see if these are printing!
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("CRITICAL: Missing Env Vars on Server")
+      return null
+    }
 
-    const res = await fetch(`${url}/rest/v1/videos?id=eq.${id}&select=*,profiles(username),comments(count)`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/videos?id=eq.${id}&select=*,profiles(username),comments(count)`, {
       headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
       },
-      next: { revalidate: 0 } // No cache
+      next: { revalidate: 0 }
     })
 
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error(`Supabase Error: ${res.status} ${res.statusText}`)
+      return null
+    }
     
     const data = await res.json()
     return data?.[0] || null
-  } catch (e) {
-    console.error("Fetch error:", e)
+
+  } catch (error) {
+    console.error("Server Fetch Exception:", error)
     return null
   }
 }
 
-// 3. METADATA GENERATOR (For Telegram/Discord)
+// 3. METADATA (Telegram / X Previews)
 export async function generateMetadata({ params }) {
   const { id } = await params
-  const video = await getVideo(id)
+  const video = await getVideoSafe(id)
 
-  if (!video) return { title: 'TGTBT' }
+  // FALLBACK: If fetch fails, show generic metadata (Prevents Crash)
+  if (!video) {
+    return {
+      title: 'Watch on TGTBT',
+      description: 'Too Good To Be True',
+      openGraph: {
+        title: 'Watch on TGTBT',
+        description: 'Check out this video',
+        url: `https://tgtbt.xyz/watch/${id}`,
+        images: ['https://tgtbt.xyz/tgtbt_logo.png'], // Ensure you have a default logo hosted
+      }
+    }
+  }
 
+  // SUCCESS: Show Rich Preview
   const isVideo = !video.video_url.match(/\.(jpeg|jpg|gif|png|webp)$/i)
   const title = video.title || 'TGTBT'
   const username = video.profiles?.username || 'User'
@@ -74,25 +95,26 @@ export async function generateMetadata({ params }) {
   }
 }
 
-// 4. MAIN PAGE COMPONENT (Server Side)
+// 4. PAGE COMPONENT
 export default async function WatchPage({ params }) {
   const { id } = await params
-  const video = await getVideo(id)
+  const video = await getVideoSafe(id)
 
-  // Error State (If fetch failed)
+  // ERROR STATE (If fetch failed or ID doesn't exist)
   if (!video) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-4">
         <AlertCircle className="text-red-500" size={48} />
         <h1 className="text-xl font-bold">Video Not Found</h1>
-        <Link href="/" className="text-blue-400 hover:underline mt-2">
-            Return Home
+        <p className="text-gray-500 text-sm">Target ID: {id}</p>
+        <Link href="/" className="px-6 py-2 bg-white text-black rounded-full font-bold hover:scale-105 transition">
+            Go Home
         </Link>
       </div>
     )
   }
 
-  // Success State: Pass data to Client Player
+  // SUCCESS STATE
   return (
     <main className="fixed inset-0 bg-black z-50">
       <VideoPlayer 
@@ -107,12 +129,11 @@ export default async function WatchPage({ params }) {
         initialRating={video.average_rating}
         initialCommentCount={video.comments?.[0]?.count || 0}
         
-        // No client-side handlers passed here initially (VideoPlayer handles its own via context/internal logic if needed)
-        // Or we pass empty handlers and let the component internal logic handle auth checks
+        // Use empty functions for server-side props that require interaction
+        // The VideoPlayer handles navigation internally now via useRouter
         onRate={() => {}} 
-        onClose={() => {}} // We need to handle this inside VideoPlayer or pass a simple redirect
+        onClose={() => {}} 
         
-        // Auto-play settings
         startMuted={false} 
         showHomeButton={true} 
       />
