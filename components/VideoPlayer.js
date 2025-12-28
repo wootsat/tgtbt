@@ -142,8 +142,6 @@ export default function VideoPlayer({
       {isTiled ? (
          isImage ? (
             // TILED IMAGE
-            // Mobile: bg-[length:75%] (Larger tiles)
-            // Desktop: md:bg-auto (Uses real image size)
             <div 
                className="absolute inset-0 w-full h-full bg-repeat bg-[length:75%] md:bg-auto bg-center"
                style={{ backgroundImage: `url(${videoSrc})` }} 
@@ -212,7 +210,9 @@ export default function VideoPlayer({
             </div>
 
             <div className="flex items-center gap-6 mt-2">
-              {!isImage && (
+              
+              {/* FIXED: Show mute if it's a Video OR if there's an Audio Track */}
+              {(!isImage || audioSrc) && (
                   <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
                     {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
                   </button>

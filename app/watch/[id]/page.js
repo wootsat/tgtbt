@@ -1,100 +1,71 @@
-import { createClient } from '@supabase/supabase-js'
-import Link from 'next/link'
-import { AlertCircle } from 'lucide-react'
-import WatchView from '@/components/WatchView' // Import the new client component
+'use client'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
+import VideoPlayer from '@/components/VideoPlayer'
+import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 
-export const dynamic = 'force-dynamic'
+export default function WatchPage({ params }) {
+  const [video, setVideo] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const { id } = params
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) return null
-  return createClient(url, key)
-}
+  useEffect(() => {
+    const fetchVideo = async () => {
+      const { data, error } = await supabase
+        .from('videos')
+        .select('*, profiles(username), comments(count)') // Ensure is_tiled is fetched (via *)
+        .eq('id', id)
+        .single()
 
-// --- 1. METADATA (Keep this for Twitter/X Cards) ---
-export async function generateMetadata(props) {
-  try {
-    const params = await props.params
-    const { id } = params
-    
-    const supabase = getSupabase()
-    if (!supabase) return { title: 'Configuration Error' }
-
-    const { data: video } = await supabase.from('videos').select('*').eq('id', id).single()
-
-    if (!video) return { title: 'Video Not Found - TGTBT' }
-
-    const safeTitle = video.title || 'Untitled TGTBT Video'
-    const safeDesc = `Watch ${safeTitle} on TGTBT`
-    const videoUrl = video.compressed_url || video.video_url
-    const pageUrl = `https://tgtbt.xyz/watch/${id}`
-    const imageUrl = 'https://tgtbt.xyz/tgtbt_logo.png'
-
-    return {
-      title: safeTitle,
-      description: safeDesc,
-      openGraph: {
-        title: safeTitle,
-        description: safeDesc,
-        url: pageUrl,
-        videos: [{ url: videoUrl, width: 720, height: 1280, type: 'video/mp4' }],
-        images: [imageUrl],
-      },
-      other: {
-        'twitter:card': 'player',
-        'twitter:title': safeTitle,
-        'twitter:description': safeDesc,
-        'twitter:image': imageUrl,
-        'twitter:player': pageUrl,
-        'twitter:player:width': '720',
-        'twitter:player:height': '1280',
+      if (error || !data) {
+        console.error('Video not found')
+        // router.push('/') // Optional: redirect home if failed
+      } else {
+        setVideo(data)
       }
+      setLoading(false)
     }
-  } catch (e) {
-    return { title: 'TGTBT' }
-  }
-}
+    fetchVideo()
+  }, [id])
 
-// --- 2. MAIN PAGE ---
-export default async function WatchPage(props) {
-  let video = null
-  let errorMsg = null
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <Loader2 className="animate-spin" size={40} />
+    </div>
+  )
 
-  try {
-    const params = await props.params 
-    const id = params.id
-    const supabase = getSupabase()
+  if (!video) return (
+    <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <p>Video not found.</p>
+    </div>
+  )
 
-    if (!supabase) throw new Error("Missing Supabase Config")
-
-    // We fetch comments count here too so the player has it ready
-    const { data, error } = await supabase
-      .from('videos')
-      .select('*, profiles(username), comments(count)')
-      .eq('id', id)
-      .single()
-      
-    if (error) throw error
-    video = data
-
-  } catch (err) {
-    errorMsg = err.message
-  }
-
-  if (errorMsg || !video) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-4 text-center">
-        <AlertCircle size={48} className="text-red-500 mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Video Unavailable</h1>
-        <p className="text-gray-400 mb-6 text-sm">{errorMsg || "Could not load video."}</p>
-        <Link href="/" className="bg-blue-600 px-6 py-3 rounded-full font-bold hover:bg-blue-500 transition">
-          Go to Home Feed
-        </Link>
-      </div>
-    )
-  }
-
-  // Render the interactive Client Component
-  return <WatchView initialVideo={video} />
+  return (
+    <main className="fixed inset-0 bg-black z-50">
+      <VideoPlayer 
+        videoSrc={video.compressed_url || video.video_url} 
+        videoId={video.id}
+        audioSrc={video.audio_url}
+        creatorUsername={video.profiles?.username}
+        creatorId={video.user_id}
+        
+        // PASS THE TILE PROP
+        isTiled={video.is_tiled}
+        
+        initialRating={video.average_rating}
+        initialCommentCount={video.comments?.[0]?.count || 0}
+        onRate={async (vidId, score) => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return alert('Login to rate!')
+            await supabase.from('ratings').upsert({ user_id: user.id, video_id: vidId, score }, { onConflict: 'user_id, video_id' })
+        }}
+        onClose={() => router.push('/')} 
+        onUserClick={(uid) => router.push(`/?u=${uid}`)}
+        startMuted={false}
+        showHomeButton={true} // Helpful for direct link visitors
+      />
+    </main>
+  )
 }
