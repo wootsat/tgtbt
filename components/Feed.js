@@ -159,6 +159,7 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
             audioSrc={activeVideo.audio_url}
             creatorUsername={activeVideo.profiles?.username}
             creatorId={activeVideo.user_id}
+            isTiled={activeVideo.is_tiled}
             initialRating={activeVideo.average_rating}
             initialCommentCount={getCommentCount(activeVideo)}
             onRate={handleRate}

@@ -24,8 +24,6 @@ export default function Home() {
 
   // --- PERSISTENT FEED TAB ---
   const [feedTab, setFeedTab] = useState('day') 
-  
-  // NEW: Wait for storage check before rendering Feed
   const [isInitialized, setIsInitialized] = useState(false)
 
   // Initialize from Session Storage on mount
@@ -34,7 +32,6 @@ export default function Home() {
     if (savedTab) {
       setFeedTab(savedTab)
     }
-    // Mark initialization as done so we can render
     setIsInitialized(true)
   }, [])
 
@@ -74,6 +71,11 @@ export default function Home() {
         setShowSearch(false);
         return;
       }
+      
+      if (showUpload) {
+        setShowUpload(false);
+        return;
+      }
 
       if (state?.view === 'profile' && state?.profileId) {
         setTargetProfileId(state.profileId);
@@ -91,7 +93,7 @@ export default function Home() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [searchedVideo, showSearch]); 
+  }, [searchedVideo, showSearch, showUpload]); 
 
   // 3. --- NAVIGATION HANDLERS ---
   const navigateToProfile = (userId) => {
@@ -143,7 +145,6 @@ export default function Home() {
 
   const isMyProfile = viewMode === 'profile' && session && targetProfileId === session.user.id
 
-  // --- LOADING STATE (Prevent wrong tab fetch) ---
   if (!isInitialized) {
     return <div className="min-h-screen bg-black flex items-center justify-center text-white">
         <Loader2 className="animate-spin text-blue-500" size={40} />
@@ -192,7 +193,7 @@ export default function Home() {
       </div>
 
       {/* --- CONTENT AREA --- */}
-      <div className="flex-1 w-full max-w-2xl h-[100dvh] relative bg-gray-900">
+      <div className="flex-1 w-full max-w-2xl h-[100dvh] relative bg-gray-900 shadow-2xl overflow-hidden">
         
         <div className={`h-full ${viewMode === 'feed' ? 'block' : 'hidden'}`}>
              <Feed 
@@ -216,6 +217,8 @@ export default function Home() {
            </div>
         )}
 
+        {/* --- OVERLAYS --- */}
+        
         {showSearch && (
            <div className="absolute inset-0 z-50">
               <SearchOverlay 
@@ -232,9 +235,33 @@ export default function Home() {
               />
            </div>
         )}
+
+        {/* UPDATED UPLOAD OVERLAY: 
+            1. Changed items-center -> items-start
+            2. Added pt-28 (padding top) to push it below navbar
+            3. Added overflow-y-auto to allow scrolling if content is tall 
+        */}
+        {showUpload && (
+          <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-md flex items-start justify-center p-4 pt-28 overflow-y-auto animate-in fade-in zoom-in duration-200">
+            <div className="w-full relative pb-20"> {/* pb-20 ensures space at bottom */}
+              <button onClick={() => setShowUpload(false)} className="absolute -top-12 right-0 text-gray-400 hover:text-white"><X size={32} /></button>
+              <UploadVideo onUploadComplete={() => {
+                setShowUpload(false)
+                setFeedKey(prev => prev + 1)
+              }} />
+            </div>
+          </div>
+        )}
+
+        {showAuth && (
+          <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
+             <Auth onClose={() => setShowAuth(false)} />
+          </div>
+        )}
+
       </div>
 
-      {/* --- FULL SCREEN OVERLAYS --- */}
+      {/* --- FULL SCREEN VIDEO PLAYER --- */}
       {searchedVideo && (
         <div className="fixed inset-0 z-[100] bg-black">
           <VideoPlayer 
@@ -243,6 +270,7 @@ export default function Home() {
             audioSrc={searchedVideo.audio_url}
             creatorUsername={searchedVideo.profiles?.username}
             creatorId={searchedVideo.user_id}
+            isTiled={searchedVideo.is_tiled}
             initialRating={searchedVideo.average_rating}
             initialCommentCount={searchedVideo.comments?.[0]?.count || 0}
             onRate={async (vidId, score) => {
@@ -253,24 +281,6 @@ export default function Home() {
             onUserClick={(uid) => navigateToProfile(uid)}
             startMuted={false} 
           />
-        </div>
-      )}
-
-      {showUpload && (
-        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-lg relative">
-            <button onClick={() => setShowUpload(false)} className="absolute -top-12 right-0 text-gray-400 hover:text-white"><X size={32} /></button>
-            <UploadVideo onUploadComplete={() => {
-              setShowUpload(false)
-              setFeedKey(prev => prev + 1)
-            }} />
-          </div>
-        </div>
-      )}
-
-      {showAuth && (
-        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4">
-           <Auth onClose={() => setShowAuth(false)} />
         </div>
       )}
 

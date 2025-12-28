@@ -11,6 +11,7 @@ export default function VideoPlayer({
   audioSrc = null, 
   creatorUsername,
   creatorId,
+  isTiled = false, 
   initialRating, 
   initialCommentCount = 0, 
   onRate, 
@@ -30,6 +31,8 @@ export default function VideoPlayer({
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
   const [isFavorited, setIsFavorited] = useState(false)
+
+  const isImage = videoSrc?.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null
 
   // --- HISTORY LOGIC ---
   useEffect(() => {
@@ -54,7 +57,6 @@ export default function VideoPlayer({
        onClose(); 
     }
   }
-  // ---------------------
 
   useEffect(() => {
     const initPlayer = async () => {
@@ -105,7 +107,9 @@ export default function VideoPlayer({
     const newState = !isMuted
     setIsMuted(newState)
     if (audioSrc && audioRef.current) audioRef.current.muted = newState
-    else if (videoRef.current) videoRef.current.muted = newState
+    const allVideos = document.querySelectorAll('.tiled-video')
+    allVideos.forEach(v => v.muted = newState)
+    if (videoRef.current) videoRef.current.muted = newState
   }
 
   const handleShare = async (e) => {
@@ -119,10 +123,8 @@ export default function VideoPlayer({
     }
   }
 
-  const shouldStartMuted = startMuted
-
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-black" onClick={handleVideoClick}>
+    <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden" onClick={handleVideoClick}>
       
       {showHomeButton && (
         <Link href="/" onClick={(e) => e.stopPropagation()} className={`absolute top-4 left-4 z-50 transition-opacity duration-300 hover:scale-105 active:scale-95 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
@@ -137,37 +139,53 @@ export default function VideoPlayer({
         <X size={36} strokeWidth={3} />
       </button>
 
-      {/* MEDIA RENDERING */}
-      {audioSrc ? (
-        <>
-          <video ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" loop playsInline autoPlay muted />
-          <audio ref={audioRef} src={audioSrc} autoPlay loop muted={shouldStartMuted} />
-        </>
+      {/* --- MEDIA RENDERING --- */}
+      {isTiled ? (
+         isImage ? (
+            // TILED IMAGE (UPDATED: SIZE AUTO)
+            <div 
+               className="absolute inset-0 w-full h-full"
+               style={{ 
+                   backgroundImage: `url(${videoSrc})`, 
+                   backgroundRepeat: 'repeat',
+                   backgroundSize: 'auto', // Use intrinsic size
+                   backgroundPosition: 'center'
+               }} 
+            />
+         ) : (
+            // TILED VIDEO
+            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 w-[120%] h-[120%] -ml-[10%] -mt-[10%]">
+               {[...Array(9)].map((_, i) => (
+                  <video 
+                    key={i}
+                    src={videoSrc}
+                    className="w-full h-full object-cover tiled-video"
+                    autoPlay 
+                    loop 
+                    muted={isMuted} 
+                    playsInline 
+                  />
+               ))}
+               <video ref={videoRef} src={videoSrc} className="hidden" />
+            </div>
+         )
       ) : (
-        shouldStartMuted ? (
-          <video ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" loop playsInline autoPlay muted />
-        ) : (
-          <video ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" loop playsInline autoPlay />
-        )
+         isImage ? (
+            <img src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" />
+         ) : (
+            <video ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" loop playsInline autoPlay muted={startMuted} />
+         )
       )}
 
+      {audioSrc && <audio ref={audioRef} src={audioSrc} autoPlay loop muted={startMuted} />}
+
       {/* WATERMARK LOGO */}
-      {/* - w-80: Standard Mobile Portrait (Large)
-          - sm:w-96: Desktop/Tablet (Even Larger)
-          - landscape:w-20: Mobile Landscape (Tiny & Tucked Away)
-      */}
       <img 
         src="/tgtbt_logo.png" 
         alt="TGTBT" 
         className="absolute z-10 select-none opacity-50 pointer-events-none h-auto 
-                   
-                   /* 1. DEFAULT (Mobile Portrait) */
                    bottom-8 right-8 w-80 
-
-                   /* 2. PHONE LANDSCAPE (Bumped up to w-24) */
                    landscape:w-24 landscape:bottom-4 landscape:right-4
-
-                   /* 3. DESKTOP ONLY (Restores big size if screen is wider than 1024px) */
                    lg:landscape:w-[30rem] lg:landscape:bottom-10 lg:landscape:right-10" 
       />
 
@@ -176,12 +194,10 @@ export default function VideoPlayer({
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
             
-            {/* CLICKABLE USERNAME */}
             {creatorUsername && (
                 <button 
                     onClick={(e) => {
                         e.stopPropagation();
-                        // Parent (Page.tsx) handles history replacement logic
                         if (onUserClick) onUserClick(creatorId);
                     }}
                     className="flex items-center gap-2 text-white/90 hover:text-blue-400 hover:scale-110 transition mb-2"
@@ -191,7 +207,6 @@ export default function VideoPlayer({
                 </button>
             )}
 
-            {/* Stars */}
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button key={star} onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)} onClick={(e) => { e.stopPropagation(); handleRate(star); }} className="transition transform hover:scale-125 focus:outline-none">
@@ -200,11 +215,12 @@ export default function VideoPlayer({
               ))}
             </div>
 
-            {/* Buttons Row */}
             <div className="flex items-center gap-6 mt-2">
-              <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
-                {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
-              </button>
+              {!isImage && (
+                  <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
+                    {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
+                  </button>
+              )}
 
               <button onClick={(e) => { e.stopPropagation(); setShowComments(true); }} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full backdrop-blur-md border border-white/10 transition">
                 <MessageCircle size={20} /> <span className="text-sm font-bold">Comments ({commentCount})</span>

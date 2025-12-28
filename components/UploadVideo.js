@@ -1,195 +1,204 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Upload, Music, Loader2, AlertCircle } from 'lucide-react'
-
-// --- UPDATED CONFIGURATION ---
-const MAX_SIZE_MB = 100      // Increased to 100MB
-const MAX_DURATION_SEC = 180 // Increased to 3 minutes
-// -----------------------------
+import { Upload, X, Loader2, Image as ImageIcon, Film, Music, Trash2 } from 'lucide-react'
 
 export default function UploadVideo({ onUploadComplete }) {
+  // Visual Media State
   const [file, setFile] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [fileType, setFileType] = useState('video') // 'video' or 'image'
+  
+  // Audio State (RESTORED)
   const [audioFile, setAudioFile] = useState(null)
+  
+  // Metadata State
   const [title, setTitle] = useState('')
+  const [isTiled, setIsTiled] = useState(false) 
   const [uploading, setUploading] = useState(false)
-  const [statusMsg, setStatusMsg] = useState('')
 
-  // Helper to check video duration
-  const checkVideoDuration = (file) => {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement('video')
-      video.preload = 'metadata'
-      video.onloadedmetadata = () => {
-        window.URL.revokeObjectURL(video.src)
-        resolve(video.duration)
-      }
-      video.onerror = () => reject("Invalid video file")
-      video.src = window.URL.createObjectURL(file)
-    })
+  const fileInputRef = useRef(null)
+  const audioInputRef = useRef(null)
+
+  // --- HANDLERS ---
+
+  const handleFileSelect = (e) => {
+    const selectedFile = e.target.files[0]
+    if (!selectedFile) return
+
+    const type = selectedFile.type.startsWith('image/') ? 'image' : 'video'
+    setFileType(type)
+    setFile(selectedFile)
+    setPreviewUrl(URL.createObjectURL(selectedFile))
   }
 
-  const handleUpload = async (e) => {
-    e.preventDefault()
-    setStatusMsg('')
-    if (!file || !title) return alert("Please select a video and enter a title.")
+  const handleAudioSelect = (e) => {
+    const selectedFile = e.target.files[0]
+    if (selectedFile) setAudioFile(selectedFile)
+  }
 
-    // 1. CHECK FILE SIZE
-    const fileSizeMB = file.size / 1024 / 1024
-    if (fileSizeMB > MAX_SIZE_MB) {
-      return alert(`File too large! Max size is ${MAX_SIZE_MB}MB`)
-    }
+  const handleUpload = async () => {
+    if (!file || !title) return alert('Please select a visual file and enter a title')
 
     setUploading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const timestamp = Date.now()
 
-    try {
-      // 2. CHECK VIDEO DURATION
-      setStatusMsg("Checking video length...")
-      const duration = await checkVideoDuration(file)
-      
-      if (duration > MAX_DURATION_SEC) {
-        throw new Error(`Video is too long! Limit is ${MAX_DURATION_SEC} seconds. (Yours: ${Math.round(duration)}s)`)
-      }
+    // 1. Upload Visual File
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${user.id}-${timestamp}.${fileExt}`
+    
+    const { error: uploadError } = await supabase.storage
+      .from('videos')
+      .upload(fileName, file)
 
-      // 3. UPLOAD VIDEO
-      setStatusMsg("Uploading video...")
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("You must be logged in.")
+    if (uploadError) {
+      console.error(uploadError)
+      setUploading(false)
+      return alert('Upload failed')
+    }
 
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${Date.now()}.${fileExt}`
-      const filePath = `${user.id}/${fileName}`
-      
-      const { error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(filePath, file)
+    const { data: { publicUrl: visualUrl } } = supabase.storage
+      .from('videos')
+      .getPublicUrl(fileName)
 
-      if (uploadError) throw uploadError
-      
-      const { data: { publicUrl: videoUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl(filePath)
-
-      // 4. UPLOAD AUDIO (Optional)
-      let finalAudioUrl = null
-      if (audioFile) {
-        setStatusMsg("Uploading audio...")
-        // Check Audio Size
-        if ((audioFile.size / 1024 / 1024) > MAX_SIZE_MB) {
-           throw new Error("Audio file too large.")
-        }
-
+    // 2. Upload Audio File (If selected)
+    let audioUrl = null
+    if (audioFile) {
         const audioExt = audioFile.name.split('.').pop()
-        const audioName = `audio_${Date.now()}.${audioExt}`
-        const audioPath = `${user.id}/${audioName}`
-
-        const { error: audioError } = await supabase.storage
-          .from('videos')
-          .upload(audioPath, audioFile)
-
-        if (audioError) throw audioError
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('videos')
-          .getPublicUrl(audioPath)
+        const audioName = `${user.id}-${timestamp}-audio.${audioExt}`
         
-        finalAudioUrl = publicUrl
-      }
+        const { error: audioUploadError } = await supabase.storage
+          .from('videos')
+          .upload(audioName, audioFile)
+        
+        if (!audioUploadError) {
+            const { data: { publicUrl } } = supabase.storage
+              .from('videos')
+              .getPublicUrl(audioName)
+            audioUrl = publicUrl
+        }
+    }
 
-      // 5. SAVE TO DB
-      setStatusMsg("Finalizing...")
-      const { error: dbError } = await supabase.from('videos').insert({
+    // 3. Insert into DB
+    const { error: dbError } = await supabase
+      .from('videos')
+      .insert({
         user_id: user.id,
         title: title,
-        video_url: videoUrl,
-        audio_url: finalAudioUrl,
-        compressed_url: null 
+        video_url: visualUrl,
+        compressed_url: visualUrl, // Images use raw URL
+        audio_url: audioUrl,       // Save audio link
+        is_tiled: isTiled
       })
 
-      if (dbError) throw dbError
-
-      alert('Upload successful!')
-      onUploadComplete()
-      
-    } catch (error) {
-      alert(error.message)
-    } finally {
-      setUploading(false)
-      setStatusMsg('')
+    setUploading(false)
+    
+    if (dbError) {
+      console.error(dbError)
+      alert('Database error')
+    } else {
+      if (onUploadComplete) onUploadComplete()
     }
   }
 
   return (
-    <div className="w-full bg-gray-900 p-6 rounded-xl border border-gray-800 shadow-2xl">
-      <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <Upload size={24} /> Upload Video
-      </h2>
+    <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 shadow-2xl flex flex-col gap-4">
+      <h2 className="text-xl font-bold text-white mb-2">Upload Media</h2>
       
-      <form onSubmit={handleUpload} className="space-y-4">
-        
-        {/* Title */}
-        <div>
-          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1">Title</label>
-          <input 
-            type="text" 
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-gray-800 text-white p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            placeholder="Give it a catchy title..."
-          />
-        </div>
-
-        {/* Video Input */}
-        <div>
-          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1 flex justify-between">
-            <span>Video File</span>
-            <span className="text-gray-500">Max {MAX_DURATION_SEC}s / {MAX_SIZE_MB}MB</span>
-          </label>
-          <input 
-            type="file" 
-            accept="video/*"
-            onChange={(e) => setFile(e.target.files[0])}
-            className="w-full text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-          />
-        </div>
-
-        {/* Audio Input */}
-        <div>
-          <label className="block text-gray-400 text-xs uppercase tracking-widest mb-1 flex items-center gap-2">
-            <Music size={14} /> Custom Audio (Optional)
-          </label>
-          <div className="relative">
-             <input 
-              type="file" 
-              accept="audio/*"
-              onChange={(e) => setAudioFile(e.target.files[0])}
-              className="w-full text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-pink-600 file:text-white hover:file:bg-pink-700 cursor-pointer"
-            />
-            {audioFile && (
-               <button 
-                 type="button" 
-                 onClick={() => setAudioFile(null)} 
-                 className="absolute right-0 top-2 text-red-500 hover:text-white text-xs"
-                >
-                 Remove Audio
-               </button>
-            )}
-          </div>
-        </div>
-
-        {statusMsg && (
-          <div className="text-sm text-blue-400 animate-pulse flex items-center gap-2">
-             <Loader2 size={14} className="animate-spin" /> {statusMsg}
-          </div>
+      {/* --- VISUAL INPUT --- */}
+      <div 
+        onClick={() => fileInputRef.current?.click()}
+        className="border-2 border-dashed border-gray-600 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:bg-gray-800 transition group relative overflow-hidden"
+      >
+        {previewUrl ? (
+          fileType === 'image' ? (
+             <img 
+               src={previewUrl} 
+               className={`max-h-48 rounded-md shadow-lg ${isTiled ? 'object-none' : 'object-contain'}`} 
+               style={isTiled ? { width: '100%', height: '12rem', backgroundImage: `url(${previewUrl})` } : {}} 
+             />
+          ) : (
+             <video src={previewUrl} className="max-h-48 rounded-md shadow-lg" controls={false} />
+          )
+        ) : (
+          <>
+            <div className="flex gap-2 mb-2">
+                <Film className="text-gray-400 group-hover:text-blue-400" />
+                <ImageIcon className="text-gray-400 group-hover:text-green-400" />
+            </div>
+            <p className="text-gray-400 text-sm font-medium">Click to select Video or Image</p>
+          </>
         )}
+        <input 
+            ref={fileInputRef} 
+            type="file" 
+            accept="video/*,image/*" 
+            onChange={handleFileSelect} 
+            className="hidden" 
+        />
+      </div>
 
-        <button 
-          disabled={uploading}
-          className="w-full bg-green-500 hover:bg-green-600 text-black font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mt-4 disabled:opacity-50"
+      {/* --- AUDIO INPUT (RESTORED) --- */}
+      <div className="flex items-center gap-3">
+        <div 
+            onClick={() => audioInputRef.current?.click()}
+            className="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 text-gray-300 rounded-xl p-3 cursor-pointer transition flex items-center justify-center gap-2"
         >
-          {uploading ? <Loader2 className="animate-spin" /> : 'Post Video'}
-        </button>
-      </form>
+            <Music size={18} className={audioFile ? "text-green-400" : "text-gray-400"} />
+            <span className="text-sm font-medium truncate">
+                {audioFile ? audioFile.name : "Add Audio Track (Optional)"}
+            </span>
+            <input 
+                ref={audioInputRef} 
+                type="file" 
+                accept="audio/*" 
+                onChange={handleAudioSelect} 
+                className="hidden" 
+            />
+        </div>
+        {audioFile && (
+            <button onClick={() => setAudioFile(null)} className="p-3 bg-red-900/50 hover:bg-red-900 text-red-400 rounded-xl transition">
+                <Trash2 size={18} />
+            </button>
+        )}
+      </div>
+
+      {/* Title Input */}
+      <input 
+        type="text" 
+        placeholder="Give it a title..." 
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 focus:border-blue-500 outline-none"
+      />
+
+      {/* --- TILED CHECKBOX --- */}
+      <label className="flex items-center gap-3 p-3 bg-gray-800 rounded-xl cursor-pointer hover:bg-gray-700 transition select-none">
+        <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition ${isTiled ? 'bg-blue-500 border-blue-500' : 'border-gray-500'}`}>
+            {isTiled && <Upload size={14} className="text-white rotate-180" />}
+        </div>
+        <input 
+            type="checkbox" 
+            checked={isTiled} 
+            onChange={(e) => setIsTiled(e.target.checked)} 
+            className="hidden" 
+        />
+        <div className="flex flex-col">
+            <span className="font-bold text-white text-sm">Tile Mode</span>
+            <span className="text-xs text-gray-400">Repeats media across the screen</span>
+        </div>
+      </label>
+
+      {/* Upload Button */}
+      <button 
+        disabled={uploading}
+        onClick={handleUpload}
+        className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {uploading ? <Loader2 className="animate-spin" /> : <Upload size={20} />}
+        {uploading ? 'Uploading...' : 'Post it!'}
+      </button>
     </div>
   )
 }
