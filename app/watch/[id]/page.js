@@ -1,16 +1,26 @@
 import WatchClient from '@/components/WatchClient'
 
-// 1. GENERATE METADATA (Server-Side)
-// This runs on the server to give Telegram/Discord the preview tags
+// 1. GENERATE METADATA (Telegram/Discord Previews)
 export async function generateMetadata({ params }) {
-  // Await params for Next.js 15 compatibility
-  const { id } = await params
+  // Safe param handling for all Next.js versions
+  const resolvedParams = await params
+  const id = resolvedParams?.id
+
+  // 1. Fail-safe: If no ID, return default
+  if (!id) return { title: 'TGTBT' }
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    // Use standard FETCH instead of the Supabase Client SDK to avoid server crashes
+    // 2. Fail-safe: If env vars are missing on server, return default immediately
+    // (This prevents the crash caused by fetching 'undefined/rest/v1/...')
+    if (!supabaseUrl || !supabaseKey) {
+      console.warn("Missing Env Vars on Server - Skipping Metadata Fetch")
+      return { title: 'TGTBT' }
+    }
+
+    // 3. Attempt Fetch
     const response = await fetch(
       `${supabaseUrl}/rest/v1/videos?id=eq.${id}&select=*,profiles(username)`,
       {
@@ -18,26 +28,26 @@ export async function generateMetadata({ params }) {
           'apikey': supabaseKey,
           'Authorization': `Bearer ${supabaseKey}`
         },
-        // Revalidate every minute so we don't hit the DB too hard
-        next: { revalidate: 60 } 
+        next: { revalidate: 60 }
       }
     )
 
+    // 4. Fail-safe: If fetch fails (404/500), return default
     if (!response.ok) {
-       console.error("Metadata fetch failed", response.statusText)
-       return { title: 'TGTBT' }
+        return { title: 'TGTBT' }
     }
 
     const data = await response.json()
     const video = data?.[0]
 
+    // 5. Fail-safe: If video not found, return default
     if (!video) return { title: 'TGTBT' }
 
-    // Prepare tags
+    // --- SUCCESS: Build the Preview Tags ---
     const isVideo = !video.video_url.match(/\.(jpeg|jpg|gif|png|webp)$/i)
-    const title = `${video.title}`
+    const title = video.title || 'TGTBT'
     const desc = `TGTBT by @${video.profiles?.username || 'User'}`
-    const imageUrl = video.video_url // Use the raw URL for the preview image
+    const imageUrl = video.video_url
 
     return {
       title: title,
@@ -47,7 +57,6 @@ export async function generateMetadata({ params }) {
         description: desc,
         type: 'video.other',
         url: `https://tgtbt.xyz/watch/${id}`,
-        // Telegram uses these to show the player inline
         videos: isVideo ? [{
           url: video.compressed_url || video.video_url,
           width: 1280,
@@ -68,16 +77,16 @@ export async function generateMetadata({ params }) {
         }] : undefined,
       }
     }
+
   } catch (error) {
-    console.error("Metadata Error:", error)
-    return { title: 'TGTBT' } // Fallback so the page never crashes
+    // 6. Fail-safe: Catch ANY other error and just load the page
+    console.error("Metadata Generation Error:", error)
+    return { title: 'TGTBT' }
   }
 }
 
-// 2. PAGE COMPONENT (Server-Side)
+// 2. PAGE COMPONENT
 export default async function WatchPage({ params }) {
-  const { id } = await params
-  
-  // Pass the ID to the client component, which handles the user interaction
-  return <WatchClient videoId={id} />
+  const resolvedParams = await params
+  return <WatchClient videoId={resolvedParams.id} />
 }
