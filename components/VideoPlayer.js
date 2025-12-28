@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient' 
 import { X, Star, MessageCircle, Volume2, VolumeX, Share2, Heart, User } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
+import { useRouter } from 'next/navigation'
 
 export default function VideoPlayer({ 
   videoSrc, 
@@ -20,6 +21,7 @@ export default function VideoPlayer({
   startMuted = true, 
   showHomeButton = false 
 }) {
+  const router = useRouter() // Initialize router
   const videoRef = useRef(null) // Main reference for single video mode
   const tileRefs = useRef([]) // Array of refs for tiled mode
   const audioRef = useRef(null)
@@ -65,18 +67,26 @@ export default function VideoPlayer({
 
     const handlePopState = (event) => {
       event.preventDefault();
-      onClose(); 
+      handleManualClose(); // Use the safe handler
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // --- UPDATED CLOSE LOGIC ---
   const handleManualClose = () => {
+    // If we have history state, go back
     if (window.history.state?.videoOpen) {
-       window.history.back(); 
-    } else {
+       window.history.back();
+    } 
+    // If onClose is provided (Modal Mode), call it
+    else if (onClose && typeof onClose === 'function') {
        onClose(); 
+    } 
+    // If no onClose provided (Page Mode / Server Component), force redirect home
+    else {
+       router.push('/');
     }
   }
 
@@ -139,7 +149,7 @@ export default function VideoPlayer({
 
   const handleRate = (score) => {
     setUserRating(score)
-    onRate(videoId, score)
+    if (onRate) onRate(videoId, score)
   }
 
   const handleShare = async (e) => {
@@ -202,13 +212,7 @@ export default function VideoPlayer({
                     className="w-full h-full object-cover tiled-video"
                     playsInline 
                     loop 
-                    // AUDIO LOGIC: 
-                    // 1. If external audio exists, ALL videos are muted.
-                    // 2. If no external audio, ONLY index 0 plays sound (controlled by isMuted).
-                    // 3. All others (index > 0) are always muted.
                     muted={audioSrc ? true : (i === 0 ? isMuted : true)}
-                    
-                    // SYNC LOGIC: Only the first video drives the loading state
                     onCanPlay={i === 0 ? handleTileReady : undefined}
                   />
                ))}
