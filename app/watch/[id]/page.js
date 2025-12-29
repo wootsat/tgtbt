@@ -30,19 +30,17 @@ async function getVideoSafe(id) {
   }
 }
 
-// 3. METADATA GENERATION (Safe Mode)
+// 3. METADATA GENERATION
 export async function generateMetadata({ params }) {
   const { id } = await params
   const video = await getVideoSafe(id)
 
-  // -- FALLBACK --
-  // Use a reliable public image (like your logo) if video is missing
   const FALLBACK_IMAGE = 'https://tgtbt.xyz/tgtbt_logo.png' 
   
+  // -- FALLBACK --
   if (!video || !video.video_url) {
     return {
       title: 'Watch on TGTBT',
-      description: 'Too Good To Be True',
       openGraph: { images: [FALLBACK_IMAGE] },
       twitter: { card: 'summary', images: [FALLBACK_IMAGE] }
     }
@@ -53,29 +51,49 @@ export async function generateMetadata({ params }) {
   const username = video.profiles?.username || 'User'
   const description = `Posted by @${username}`
   
-  // Clean URL check
+  const rawVideoUrl = video.compressed_url || video.video_url || ''
   const rawImage = video.video_url || ''
-  const imageUrl = rawImage.startsWith('http') ? rawImage : FALLBACK_IMAGE
+  
+  // 1. Determine if it's an MP4/Video file
+  // (If it doesn't end in an image extension, we assume it's a video)
+  const isVideo = !rawVideoUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) && rawVideoUrl.startsWith('http')
+  
+  // 2. Image Logic: If it's a video, use the logo (unless you have a thumbnail_url col). 
+  // If it's a GIF/Image, use the file itself.
+  const imageUrl = rawImage.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? rawImage : FALLBACK_IMAGE
 
   // -- CONSTRUCT METADATA --
-  // We use 'summary_large_image' for everything. 
-  // This shows a big preview image in Telegram/X and prevents the "players" crash.
   return {
     title: `${title} | @${username}`,
     description: description,
+    
+    // OpenGraph (Used by Telegram, Discord, iMessage)
     openGraph: {
       title: title,
       description: description,
       url: `https://tgtbt.xyz/watch/${id}`,
       siteName: 'TGTBT',
       images: [{ url: imageUrl }],
-      type: 'website', 
+      type: 'website', // Default
+      
+      // INJECT VIDEO TAGS (This makes Telegram play MP4s!)
+      ...(isVideo && {
+          type: 'video.other',
+          videos: [{
+            url: rawVideoUrl,
+            width: 1280,
+            height: 720,
+            type: 'video/mp4' // Critical for Telegram
+          }]
+      })
     },
+
+    // Twitter (Keep simple to prevent crash)
     twitter: {
-      card: 'summary_large_image',
+      card: 'summary_large_image', // Safe card type
       title: title,
       description: description,
-      images: [imageUrl], // Must be an array of strings
+      images: [imageUrl],
     }
   }
 }
@@ -100,7 +118,6 @@ export default async function WatchPage({ params }) {
   return (
     <main className="fixed inset-0 bg-black z-50">
       <VideoPlayer 
-        // Pass only primitives to Client Component
         videoSrc={video.compressed_url || video.video_url} 
         videoId={video.id}
         audioSrc={video.audio_url}
@@ -110,7 +127,6 @@ export default async function WatchPage({ params }) {
         initialRating={video.average_rating}
         initialCommentCount={video.comments?.[0]?.count || 0}
         
-        // Settings
         startMuted={false} 
         showHomeButton={true} 
       />
