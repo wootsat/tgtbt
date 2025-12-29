@@ -9,7 +9,6 @@ export default function WatchClient({ video }) {
   const router = useRouter()
   const [hasInteracted, setHasInteracted] = useState(false)
 
-  // Handle rating inside the client
   const handleRate = async (vidId, score) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return alert('Login to rate!')
@@ -37,7 +36,7 @@ export default function WatchClient({ video }) {
               <img src="/tgtbt_logo.png" className="w-48 mb-8 drop-shadow-2xl" />
               
               <h1 className="text-white text-xl font-bold mb-2">
-                 @{video.profiles?.username || 'User'} sent you a TGTBT
+                 @{video.profiles?.username || 'User'} made a TGTBT
               </h1>
               <p className="text-gray-400 mb-8 italic text-lg">"{video.title}"</p>
               
@@ -52,7 +51,7 @@ export default function WatchClient({ video }) {
      )
   }
 
-  // --- 2. REAL PLAYER (Mounts after click, Audio allowed) ---
+  // --- 2. REAL PLAYER ---
   return (
     <main className="fixed inset-0 bg-black z-50">
       <VideoPlayer 
@@ -60,19 +59,13 @@ export default function WatchClient({ video }) {
         videoId={video.id}
         audioSrc={video.audio_url}
         isTiled={video.is_tiled}
-        
         creatorUsername={video.profiles?.username}
         creatorId={video.user_id}
-        
         initialRating={video.average_rating}
         initialCommentCount={video.comments?.[0]?.count || 0}
         onRate={handleRate}
-        
-        // Navigation Handlers
         onClose={() => router.push('/')} 
         onUserClick={(userId) => router.push(`/?u=${userId}`)}
-        
-        // AUDIO ON (Safe because user just clicked!)
         startMuted={false} 
         showHomeButton={true} 
       />

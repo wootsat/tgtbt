@@ -2,10 +2,9 @@ import WatchClient from '@/components/WatchClient'
 import { AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 
-// 1. Force Dynamic Rendering
 export const dynamic = 'force-dynamic'
 
-// 2. SAFE FETCH (Server Side)
+// --- SAFE FETCH ---
 async function getVideoSafe(id) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -30,31 +29,46 @@ async function getVideoSafe(id) {
   }
 }
 
-// 3. METADATA GENERATION (Generic Card)
+// --- METADATA (Telegram Card) ---
 export async function generateMetadata({ params }) {
   const { id } = await params
   const video = await getVideoSafe(id)
 
-  // GENERIC CARD IMAGE (Reliable)
-  const GENERIC_IMAGE = 'https://tgtbt.xyz/tgtbt_logo.png'
-  
-  // Defaults if video not found
+  // 1. CONSTANTS
+  // Ensure this file actually exists in your public folder!
+  const FALLBACK_IMAGE = 'https://tgtbt.xyz/tgtbt_logo.png' 
+
+  // 2. FALLBACK (If video not found)
   if (!video) {
     return {
       title: 'Watch on TGTBT',
       description: 'Too Good To Be True',
-      openGraph: { images: [GENERIC_IMAGE] },
-      twitter: { card: 'summary', images: [GENERIC_IMAGE] }
+      openGraph: {
+        title: 'Watch on TGTBT',
+        images: [{ url: FALLBACK_IMAGE }],
+      },
+      twitter: {
+        card: 'summary',
+        images: [FALLBACK_IMAGE],
+      }
     }
   }
 
-  // --- PREVIEW CARD INFO ---
-  // We show the specific Title and Username, but keep the image generic
-  // to ensure the link preview works perfectly on all platforms.
+  // 3. PREPARE DATA
   const title = video.title || 'TGTBT'
   const username = video.profiles?.username || 'User'
   const description = `Watch this video by @${username} on TGTBT`
+  
+  // Try to use the actual video URL as the image if it is an image
+  // Otherwise, fallback to the logo.
+  const rawUrl = video.video_url || ''
+  const isImageFile = rawUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)
+  
+  const imageUrl = (isImageFile && rawUrl.startsWith('http')) 
+    ? rawUrl 
+    : FALLBACK_IMAGE
 
+  // 4. RETURN TAGS
   return {
     title: `${title} | @${username}`,
     description: description,
@@ -63,19 +77,19 @@ export async function generateMetadata({ params }) {
       description: description,
       url: `https://tgtbt.xyz/watch/${id}`,
       siteName: 'TGTBT',
-      images: [{ url: GENERIC_IMAGE }],
+      images: [{ url: imageUrl }],
       type: 'website', 
     },
     twitter: {
-      card: 'summary', // "summary" shows a small square image, "summary_large_image" shows big rectangle
+      card: 'summary_large_image', // Big pretty card
       title: title,
       description: description,
-      images: [GENERIC_IMAGE], 
+      images: [imageUrl], 
     }
   }
 }
 
-// 4. MAIN PAGE COMPONENT
+// --- MAIN PAGE ---
 export default async function WatchPage({ params }) {
   const { id } = await params
   const video = await getVideoSafe(id)
@@ -92,6 +106,5 @@ export default async function WatchPage({ params }) {
     )
   }
 
-  // Pass data to the Client Component (Interaction Wall)
   return <WatchClient video={video} />
 }
