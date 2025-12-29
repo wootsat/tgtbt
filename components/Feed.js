@@ -8,7 +8,8 @@ import { useSwipeable } from 'react-swipeable'
 
 const BATCH_SIZE = 20
 
-export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', onTabChange, isVisible = true }) {
+// Added onShowToast to props
+export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', onTabChange, isVisible = true, onShowToast }) {
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(false)
   const [activeVideo, setActiveVideo] = useState(null)
@@ -76,21 +77,23 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
     setLoading(false)
   }
 
+  // --- UPDATED SHARE HANDLER ---
   const handleShare = async (e, videoId) => {
     e.stopPropagation()
     const shareUrl = `https://tgtbt.xyz/watch/${videoId}`
+    
     if (navigator.share) {
       try { await navigator.share({ title: 'TGTBT', url: shareUrl }) } catch (err) { }
     } else {
       navigator.clipboard.writeText(shareUrl)
-      alert('Link copied!')
+      // Use the global toast instead of alert
+      if (onShowToast) onShowToast()
     }
   }
 
   // --- SWIPE HANDLERS ---
   const handlers = useSwipeable({
     onSwipedLeft: () => {
-      // Removed the strict 'pointerType' check to ensure it works on all mobile devices
       if (activeTab === 'new') onTabChange('day')
       else if (activeTab === 'day') onTabChange('week')
       else if (activeTab === 'week') onTabChange('new') 
@@ -100,9 +103,9 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
       else if (activeTab === 'day') onTabChange('new')
       else if (activeTab === 'new') onTabChange('week') 
     },
-    trackMouse: false, // Prevents desktop "ghost swipes"
-    trackTouch: true,  // Ensures mobile works
-    delta: 10,         // Swipe threshold
+    trackMouse: false, 
+    trackTouch: true,
+    delta: 10,
     swipeDuration: 500
   })
 
@@ -181,7 +184,7 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
           </button>
           <span className="text-gray-700">|</span>
           <button onClick={() => onTabChange('day')} className={`transition-all duration-300 flex items-center gap-1 ${activeTab === 'day' ? 'text-blue-400 scale-110 drop-shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
-             HOT FRESH <Flame size={12} />
+              HOT FRESH <Flame size={12} />
           </button>
           <span className="text-gray-700">|</span>
           <button onClick={() => onTabChange('week')} className={`transition-all duration-300 flex items-center gap-1 ${activeTab === 'week' ? 'text-fuchsia-500 scale-110 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]' : 'text-gray-600 hover:text-gray-400'}`}>
@@ -191,7 +194,7 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
         
         {/* Only visible on mobile/touch screens */}
         <p className="text-gray-500 text-[10px] uppercase tracking-widest animate-pulse md:hidden mt-2">
-           Swipe Left / Right to switch
+            Swipe Left / Right to switch
         </p>
       </div>
 
@@ -236,7 +239,7 @@ export default function Feed({ onUserClick, onAuthRequired, activeTab = 'day', o
                     )}
                     <span className="text-gray-600">|</span>
                     <span className="flex items-center gap-1 text-gray-400">
-                       <Eye size={12} /> {video.view_count || 0}
+                        <Eye size={12} /> {video.view_count || 0}
                     </span>
                     <span className="text-gray-600">|</span>
                     <button 
