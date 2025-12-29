@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { LogOut, PlusCircle, X, User, Home as HomeIcon, LogIn, Search, Loader2 } from 'lucide-react'
+import { LogOut, PlusCircle, X, User, Home as HomeIcon, LogIn, Search, Loader2, Check } from 'lucide-react'
 
 import UploadVideo from '@/components/UploadVideo'
 import UserProfile from '@/components/UserProfile'
@@ -25,6 +25,15 @@ export default function Home() {
   // --- PERSISTENT FEED TAB ---
   const [feedTab, setFeedTab] = useState('day') 
   const [isInitialized, setIsInitialized] = useState(false)
+  
+  // --- NEW: TOAST STATE ---
+  const [showToast, setShowToast] = useState(false)
+
+  // Helper to show the popup (Passed down to child components)
+  const triggerToast = () => {
+    setShowToast(true)
+    setTimeout(() => setShowToast(false), 2000)
+  }
 
   // Initialize from Session Storage on mount
   useEffect(() => {
@@ -196,6 +205,7 @@ export default function Home() {
       <div className="flex-1 w-full max-w-2xl h-[100dvh] relative bg-gray-900 shadow-2xl overflow-hidden">
         
         <div className={`h-full ${viewMode === 'feed' ? 'block' : 'hidden'}`}>
+             {/* Passed triggerToast so Feed can use it for thumbnail sharing */}
              <Feed 
                key={feedKey} 
                activeTab={feedTab}
@@ -203,6 +213,7 @@ export default function Home() {
                onAuthRequired={() => setShowAuth(true)}
                onUserClick={(userId) => navigateToProfile(userId)} 
                isVisible={viewMode === 'feed'} 
+               onShowToast={triggerToast} 
              />
         </div>
 
@@ -213,6 +224,7 @@ export default function Home() {
                 targetUserId={targetProfileId} 
                 onBack={() => navigateToFeed(false)} 
                 onUserClick={(id) => navigateToProfile(id)} 
+                onShowToast={triggerToast}
              />
            </div>
         )}
@@ -232,18 +244,14 @@ export default function Home() {
                      setSearchedVideo(video);
                      window.history.replaceState({ modal: 'video' }, '', window.location.href);
                  }}
+                 onShowToast={triggerToast}
               />
            </div>
         )}
 
-        {/* UPDATED UPLOAD OVERLAY: 
-            1. Changed items-center -> items-start
-            2. Added pt-28 (padding top) to push it below navbar
-            3. Added overflow-y-auto to allow scrolling if content is tall 
-        */}
         {showUpload && (
           <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-md flex items-start justify-center p-4 pt-28 overflow-y-auto animate-in fade-in zoom-in duration-200">
-            <div className="w-full relative pb-20"> {/* pb-20 ensures space at bottom */}
+            <div className="w-full relative pb-20"> 
               <button onClick={() => setShowUpload(false)} className="absolute -top-12 right-0 text-gray-400 hover:text-white"><X size={32} /></button>
               <UploadVideo onUploadComplete={() => {
                 setShowUpload(false)
@@ -280,9 +288,18 @@ export default function Home() {
             onClose={() => window.history.back()} 
             onUserClick={(uid) => navigateToProfile(uid)}
             startMuted={false} 
+            // The VideoPlayer handles its own internal toast, 
+            // so we don't need to pass triggerToast here.
           />
         </div>
       )}
+
+      {/* --- GLOBAL TOAST NOTIFICATION --- */}
+      {/* This pops up when Feed, UserProfile, or Search triggers a share action */}
+      <div className={`fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 transition-all duration-500 z-[100] ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 pointer-events-none'}`}>
+        <Check size={20} className="text-green-600" />
+        <span className="font-bold">Link Copied!</span>
+      </div>
 
     </main>
   )
