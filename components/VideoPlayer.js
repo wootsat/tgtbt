@@ -2,7 +2,7 @@
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link' 
 import { supabase } from '@/lib/supabaseClient' 
-import { X, Star, MessageCircle, Volume2, VolumeX, Share2, Heart, User } from 'lucide-react'
+import { X, Star, MessageCircle, Volume2, VolumeX, Share2, Heart, User, Check } from 'lucide-react'
 import CommentsOverlay from '@/components/CommentsOverlay' 
 import { useRouter } from 'next/navigation'
 
@@ -15,8 +15,8 @@ export default function VideoPlayer({
   isTiled = false, 
   initialRating, 
   initialCommentCount = 0, 
-  onRate, // Optional now
-  onClose, // Optional now
+  onRate, 
+  onClose, 
   onUserClick,
   startMuted = true, 
   showHomeButton = false 
@@ -34,12 +34,14 @@ export default function VideoPlayer({
   const [isMuted, setIsMuted] = useState(startMuted)
   const [commentCount, setCommentCount] = useState(initialCommentCount)
   const [isFavorited, setIsFavorited] = useState(false)
-  
   const [isLoaded, setIsLoaded] = useState(false)
+  
+  // NEW: State for the "Copied" popup
+  const [showToast, setShowToast] = useState(false)
 
   const isImage = videoSrc?.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null
 
-  // --- ATTEMPT AUTOPLAY ---
+  // --- AUTOPLAY ---
   useEffect(() => {
     if (!startMuted) {
         const attemptPlay = async () => {
@@ -56,7 +58,7 @@ export default function VideoPlayer({
     }
   }, [startMuted])
 
-  // --- HISTORY LOGIC ---
+  // --- HISTORY & CLOSE ---
   useEffect(() => {
     const handleHistory = () => {
        window.history.pushState({ videoOpen: true }, '', window.location.href);
@@ -72,7 +74,6 @@ export default function VideoPlayer({
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // --- CLOSE LOGIC ---
   const handleManualClose = () => {
     if (window.history.state?.videoOpen) {
        window.history.back();
@@ -83,44 +84,17 @@ export default function VideoPlayer({
     }
   }
 
-  // --- RATE LOGIC (Self-Contained) ---
+  // --- INTERACTIONS ---
   const handleRate = async (score) => {
     setUserRating(score)
-    
-    // If a parent handler exists, use it
     if (onRate && typeof onRate === 'function') {
         onRate(videoId, score)
         return
     }
-
-    // Otherwise, handle it internally (Client-Side)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return alert('Login to rate!')
-    
-    await supabase.from('ratings').upsert(
-        { user_id: user.id, video_id: videoId, score }, 
-        { onConflict: 'user_id, video_id' }
-    )
+    await supabase.from('ratings').upsert({ user_id: user.id, video_id: videoId, score }, { onConflict: 'user_id, video_id' })
   }
-
-  useEffect(() => {
-    const initPlayer = async () => {
-      if (!videoId) return
-      const { error } = await supabase.rpc('increment_view_count', { video_id: videoId })
-      
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data } = await supabase
-          .from('video_favorites')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('video_id', videoId)
-          .single()
-        if (data) setIsFavorited(true)
-      }
-    }
-    initPlayer()
-  }, [videoId])
 
   const toggleMute = (e) => {
     e.stopPropagation()
@@ -137,7 +111,6 @@ export default function VideoPlayer({
     e.stopPropagation()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return alert("Login to favorite videos!")
-
     if (isFavorited) {
       const { error } = await supabase.from('video_favorites').delete().match({ user_id: user.id, video_id: videoId })
       if (!error) setIsFavorited(false)
@@ -147,21 +120,43 @@ export default function VideoPlayer({
     }
   }
 
-  const handleVideoClick = (e) => {
-    e.stopPropagation()
-    setShowControls(prev => !prev)
-  }
-
+  // --- NEW SHARE LOGIC ---
   const handleShare = async (e) => {
     e.stopPropagation()
     const shareUrl = `https://tgtbt.xyz/watch/${videoId}`
+    
+    // Try native share first (Mobile)
     if (navigator.share) {
-      try { await navigator.share({ title: 'TGTBT', url: shareUrl }) } catch (err) {}
+      try { 
+          await navigator.share({ title: 'TGTBT', url: shareUrl }) 
+      } catch (err) {
+          // If they cancel native share, do nothing
+      }
     } else {
+      // Fallback to Clipboard + Toast Notification
       navigator.clipboard.writeText(shareUrl)
-      alert('Link copied!')
+      
+      // Show Toast
+      setShowToast(true)
+      
+      // Hide after 2 seconds
+      setTimeout(() => setShowToast(false), 2000)
     }
   }
+
+  // --- INIT ---
+  useEffect(() => {
+    const initPlayer = async () => {
+      if (!videoId) return
+      const { error } = await supabase.rpc('increment_view_count', { video_id: videoId })
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase.from('video_favorites').select('id').eq('user_id', user.id).eq('video_id', videoId).single()
+        if (data) setIsFavorited(true)
+      }
+    }
+    initPlayer()
+  }, [videoId])
 
   const handleTileReady = () => {
     if (!isLoaded) {
@@ -175,17 +170,13 @@ export default function VideoPlayer({
     }
   }
 
-  // --- USER CLICK HANDLER ---
   const handleUserClickInternal = (uid) => {
-      if (onUserClick && typeof onUserClick === 'function') {
-          onUserClick(uid)
-      } else {
-          router.push(`/?u=${uid}`)
-      }
+      if (onUserClick && typeof onUserClick === 'function') onUserClick(uid)
+      else router.push(`/?u=${uid}`)
   }
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden" onClick={handleVideoClick}>
+    <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden" onClick={(e) => { e.stopPropagation(); setShowControls(prev => !prev); }}>
       
       {showHomeButton && (
         <Link href="/" onClick={(e) => e.stopPropagation()} className={`absolute top-4 left-4 z-50 transition-opacity duration-300 hover:scale-105 active:scale-95 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
@@ -193,32 +184,18 @@ export default function VideoPlayer({
         </Link>
       )}
 
-      <button 
-        onClick={handleManualClose} 
-        className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+      <button onClick={handleManualClose} className={`absolute top-4 right-4 z-50 text-white hover:scale-110 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl backdrop-blur-sm transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <X size={36} strokeWidth={3} />
       </button>
 
-      {/* --- MEDIA RENDERING --- */}
+      {/* --- RENDER MEDIA --- */}
       {isTiled ? (
          isImage ? (
-            <div 
-               className="absolute inset-0 w-full h-full bg-repeat bg-[length:75%] md:bg-auto bg-center"
-               style={{ backgroundImage: `url(${videoSrc})` }} 
-            />
+            <div className="absolute inset-0 w-full h-full bg-repeat bg-[length:75%] md:bg-auto bg-center" style={{ backgroundImage: `url(${videoSrc})` }} />
          ) : (
             <div className={`absolute inset-0 grid grid-cols-3 grid-rows-3 w-[120%] h-[120%] -ml-[10%] -mt-[10%] transition-opacity duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
                {[...Array(9)].map((_, i) => (
-                  <video 
-                    key={i}
-                    ref={el => tileRefs.current[i] = el}
-                    src={videoSrc}
-                    className="w-full h-full object-cover tiled-video"
-                    playsInline 
-                    loop 
-                    muted={audioSrc ? true : (i === 0 ? isMuted : true)}
-                    onCanPlay={i === 0 ? handleTileReady : undefined}
-                  />
+                  <video key={i} ref={el => tileRefs.current[i] = el} src={videoSrc} className="w-full h-full object-cover tiled-video" playsInline loop muted={audioSrc ? true : (i === 0 ? isMuted : true)} onCanPlay={i === 0 ? handleTileReady : undefined} />
                ))}
             </div>
          )
@@ -226,40 +203,30 @@ export default function VideoPlayer({
          isImage ? (
             <img src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" />
          ) : (
-            <video 
-                ref={videoRef} 
-                src={videoSrc} 
-                className="max-h-full max-w-full w-auto h-auto object-contain" 
-                loop 
-                playsInline 
-                autoPlay 
-                muted={isMuted} 
-            />
+            <video ref={videoRef} src={videoSrc} className="max-h-full max-w-full w-auto h-auto object-contain" loop playsInline autoPlay muted={isMuted} />
          )
       )}
 
       {audioSrc && <audio ref={audioRef} src={audioSrc} autoPlay loop muted={isMuted} />}
 
-      <img src="/tgtbt_logo.png" alt="TGTBT" className="absolute z-10 select-none opacity-50 pointer-events-none h-auto bottom-8 right-8 w-80 landscape:w-24 landscape:bottom-4 landscape:right-4 lg:landscape:w-[30rem] lg:landscape:bottom-10 lg:landscape:right-10" />
+      <img src="/tgtbt_logo.png" className="absolute z-10 select-none opacity-50 pointer-events-none h-auto bottom-8 right-8 w-80 landscape:w-24 landscape:bottom-4 landscape:right-4 lg:landscape:w-[30rem] lg:landscape:bottom-10 lg:landscape:right-10" />
+
+      {/* --- TOAST NOTIFICATION (NEW) --- */}
+      <div className={`absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-white/90 text-black px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 transition-all duration-500 z-[100] ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 pointer-events-none'}`}>
+        <Check size={20} className="text-green-600" />
+        <span className="font-bold">Link Copied!</span>
+      </div>
 
       {/* --- CONTROLS OVERLAY --- */}
       {!showComments && (
         <div className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col gap-4 items-center">
-            
             {creatorUsername && (
-                <button 
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        handleUserClickInternal(creatorId);
-                    }}
-                    className="flex items-center gap-2 text-white/90 hover:text-blue-400 hover:scale-110 transition mb-2"
-                >
+                <button onClick={(e) => { e.stopPropagation(); handleUserClickInternal(creatorId); }} className="flex items-center gap-2 text-white/90 hover:text-blue-400 hover:scale-110 transition mb-2">
                     <User size={20} className="text-blue-500" />
                     <span className="text-xl font-bold shadow-black drop-shadow-lg">@{creatorUsername}</span>
                 </button>
             )}
-
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button key={star} onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)} onClick={(e) => { e.stopPropagation(); handleRate(star); }} className="transition transform hover:scale-125 focus:outline-none">
@@ -267,7 +234,6 @@ export default function VideoPlayer({
                 </button>
               ))}
             </div>
-
             <div className="flex items-center gap-6 mt-2">
               {(!isImage || audioSrc) && (
                   <button onClick={toggleMute} className="text-white/80 hover:text-white transition">
@@ -290,13 +256,7 @@ export default function VideoPlayer({
 
       {showComments && (
         <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={(e) => { e.stopPropagation(); setShowComments(false); }}>
-          <CommentsOverlay 
-            videoId={videoId} 
-            onClose={() => setShowComments(false)} 
-            isInsidePlayer={true} 
-            onCommentAdded={() => setCommentCount(prev => prev + 1)} 
-            onUserClick={handleUserClickInternal} 
-          />
+          <CommentsOverlay videoId={videoId} onClose={() => setShowComments(false)} isInsidePlayer={true} onCommentAdded={() => setCommentCount(prev => prev + 1)} onUserClick={handleUserClickInternal} />
         </div>
       )}
     </div>
