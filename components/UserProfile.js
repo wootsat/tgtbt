@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { ArrowLeft, UserCheck, Heart, PlayCircle, Share2, Video, Users, Eye, MessageCircle, Star, ArrowUpDown, Trash2, Loader2 } from 'lucide-react'
+import { ArrowLeft, UserCheck, Heart, PlayCircle, Share2, Video, Users, Eye, MessageCircle, Star, ArrowUpDown, Trash2, Loader2, Camera } from 'lucide-react'
 import VideoPlayer from '@/components/VideoPlayer'
 
 export default function UserProfile({ session, targetUserId, onBack, onUserClick }) {
@@ -12,8 +12,13 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
   const [loading, setLoading] = useState(true)
   const [isFollowing, setIsFollowing] = useState(false)
   const [sortBy, setSortBy] = useState('date') 
+  
+  // --- AVATAR UPLOAD STATE ---
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const fileInputRef = useRef(null)
 
   const isMyProfile = session?.user?.id === targetUserId
+  const profileId = targetUserId || session?.user?.id
 
   useEffect(() => {
     fetchProfile()
@@ -50,6 +55,45 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
     }
   }
 
+  // --- AVATAR UPLOAD HANDLER ---
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    setUploadingAvatar(true)
+    try {
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${profileId}-${Date.now()}.${fileExt}`
+        const filePath = `${fileName}`
+
+        // 1. Upload
+        const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(filePath, file, { upsert: true })
+        if (uploadError) throw uploadError
+
+        // 2. Public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(filePath)
+
+        // 3. Update DB
+        const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ avatar_url: publicUrl })
+            .eq('id', profileId)
+        if (updateError) throw updateError
+
+        // 4. Update Local State
+        setProfile(prev => ({ ...prev, avatar_url: publicUrl }))
+        
+    } catch (error) {
+        alert('Error updating avatar: ' + error.message)
+    } finally {
+        setUploadingAvatar(false)
+    }
+  }
+
   const handleDelete = async (e, videoId) => {
     e.stopPropagation()
     if (!confirm("Are you sure you want to delete this video?")) return
@@ -60,7 +104,6 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
         alert("Error deleting video")
         console.error(error)
     } else {
-        // Remove from local state immediately
         setItems(prev => prev.filter(item => item.id !== videoId))
     }
   }
@@ -97,7 +140,7 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
       
       let extracted = favorites?.map(f => f.videos) || []
       if (sortBy === 'rating') {
-         extracted.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
+          extracted.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
       }
       data = extracted
     }
@@ -139,15 +182,41 @@ export default function UserProfile({ session, targetUserId, onBack, onUserClick
 
       {/* Profile Info */}
       <div className="p-6 flex flex-col items-center gap-4 bg-gray-900 border-b border-gray-800">
-        <div className="w-24 h-24 bg-gray-700 rounded-full overflow-hidden border-2 border-gray-600 shadow-xl">
-          {profile?.avatar_url ? (
-            <img src={profile.avatar_url} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-gray-500">
-              {profile?.username?.[0]?.toUpperCase()}
+        
+        {/* AVATAR WITH CAMERA BUTTON */}
+        <div className="relative group">
+            <div className="w-24 h-24 bg-gray-700 rounded-full overflow-hidden border-2 border-gray-600 shadow-xl">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-gray-500">
+                  {profile?.username?.[0]?.toUpperCase()}
+                </div>
+              )}
             </div>
-          )}
+
+            {/* CAMERA BUTTON (Only visible if own profile) */}
+            {isMyProfile && (
+                <>
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingAvatar}
+                        className="absolute bottom-0 right-0 bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full shadow-lg transition transform hover:scale-110 active:scale-95 border-2 border-black"
+                    >
+                        {uploadingAvatar ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                    </button>
+                    {/* Hidden Input */}
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleAvatarUpload} 
+                        accept="image/*" 
+                        hidden 
+                    />
+                </>
+            )}
         </div>
+
         <div className="text-center">
             <h2 className="text-2xl font-bold text-white">@{profile?.username}</h2>
             <p className="text-gray-400 text-sm mt-1">Joined {new Date(profile?.created_at || Date.now()).toLocaleDateString()}</p>
